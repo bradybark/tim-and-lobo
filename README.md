@@ -5,11 +5,11 @@ A comprehensive, local-first inventory management application built with React, 
 ## 🚀 Features
 
 #### Core Functionality
-Centralized Dashboard: Get a high-level view of inventory health, reorder suggestions, and daily sales rates.
-Inventory Log: Track physical counts, calculate sales velocity automatically, and view historical data.
-Purchase Orders (POs): Create and manage POs, track vendor details, and monitor delivery performance (early/late/on-time status).
-Reorder Planner: Automated logic calculates reorder quantities based on lead time, safety stock (min days), and desired inventory targets (months on hand).
-Vendor Management: Maintain a database of suppliers with contact details for easy PO creation.
+- Centralized Dashboard: Get a high-level view of inventory health, reorder suggestions, and daily sales rates.
+- Inventory Log: Track physical counts, calculate sales velocity automatically, and view historical data.
+- Purchase Orders (POs): Create and manage POs, track vendor details, and monitor delivery performance (early/late/on-time status).
+- Reorder Planner: Automated logic calculates reorder quantities based on lead time, safety stock (min days), and desired inventory targets (months on hand).
+- Vendor Management: Maintain a database of suppliers with contact details for easy PO creation.
 
 #### Data & Security
 - Local-First Architecture: All data is stored securely in your browser's localStorage by default.
