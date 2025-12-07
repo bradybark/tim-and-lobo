@@ -1,4 +1,4 @@
-// views/CompanyDashboard.jsx
+// src/views/CompanyDashboard.jsx
 import React, { useState, useCallback, useEffect } from 'react';
 import { Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
 import PlannerView from './PlannerView';
@@ -7,7 +7,6 @@ import POView from './POView';
 import VendorManagerView from './VendorManagerView';
 import SettingsView from './SettingsView';
 
-// Imports from our new refactored structure
 import { getDaysDiff } from '../utils/date';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
 import {
@@ -252,6 +251,9 @@ const CompanyDashboard = ({
               cloudStatus={cloudStatus}
               leadTimeStats={leadTimeStats}
               onExportLeadTimeReport={handleExportLeadTimeAction}
+              // PASSED DATA FOR NEW REPORT
+              snapshots={snapshots}
+              pos={pos}
             />
           )}
         </main>

@@ -3,6 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { Briefcase, Sun, Moon, Package } from 'lucide-react';
 import CompanyDashboard from './views/CompanyDashboard';
 
+// --- Configuration ---
+// access the variable from the .env file
+const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD; 
+// ---------------------
+
 const OrgCard = ({ name, description, primary, onClick }) => {
   return (
     <div className="rounded-3xl bg-slate-900/70 border border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 max-w-sm w-full">

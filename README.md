@@ -1,16 +1,94 @@
-# React + Vite
+## Inventory Management Dashboard v2.0
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A comprehensive, local-first inventory management application built with React, Vite, and Tailwind CSS v4.
 
-Currently, two official plugins are available:
+## 🚀 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+#### Core Functionality
+- Centralized Dashboard: Get a high-level view of inventory health, reorder suggestions, and daily sales rates.
+- Inventory Log: Track physical counts, calculate sales velocity automatically, and view historical data.
+- Purchase Orders (POs): Create and manage POs, track vendor details, and monitor delivery performance (early/late/on-time status).
+- Reorder Planner: Automated logic calculates reorder quantities based on lead time, safety stock (min days), and desired inventory targets (months on hand).
+- Vendor Management: Maintain a database of suppliers with contact details for easy PO creation.
 
-## React Compiler
+#### Data & Security
+- Local-First Architecture: All data is stored securely in your browser's localStorage by default.
+- Cloud Sync (Optional): Link to a JSON file in your Google Drive or Dropbox (via the File System Access API) for live auto-saving and backups.
+- Export/Import: Full support for exporting data to Excel (.xlsx) reports or JSON backups.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+#### UI/UX
+- Native Dark Mode: Fully responsive interface with a toggleable dark/light theme.
+- Multi-Org Support: Manage multiple distinct inventory datasets (e.g., "Lobo Tool Company" vs "Timothy's Toolbox") within the same app.
 
-## Expanding the ESLint configuration
+## 🛠️ Technical Stack
+- Framework: React + Vite
+- Styling: Tailwind CSS v4 (using CSS-first configuration)
+- Icons: Lucide React
+- Data Handling: Custom hooks (useDashboardMetrics) for business logic separation and memoized calculations.
+- Exporting: exceljs and file-saver for generating reports.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+##📦 Installation & Setup
+
+1. Clone the repository
+```
+git clone [https://github.com/your-username/inventory-dashboard.git](https://github.com/your-username/inventory-dashboard.git)
+cd inventory-dashboard
+ ```
+
+
+2. Install dependencies
+```
+npm install
+```
+
+
+3. Run development server
+```
+npm run dev
+```
+
+
+4. Build for production
+```
+npm run build
+```
+
+
+5. To preview the production build locally:
+```
+npm run preview
+```
+
+
+## 🖥️ Running Without a Server (Local File Mode)
+
+If you need to run the application directly from your file system (e.g., double-clicking index.html):
+
+Open vite.config.js.
+
+Ensure the base property is set to relative paths:
+```
+export default defineConfig({
+  plugins: [react()],
+  base: './', // Important for file:// protocol
+})
+```
+Run 
+```
+npm run build.
+```
+Open `dist/index.html` in your browser.
+
+*Note: Cloud Sync features may be restricted by some browsers when running via the file:// protocol due to security policies. Manual JSON export/import will always work.*
+
+📂 Project Structure
+
+```src/
+├── components/        # Reusable UI components (TooltipHeader, VendorCell, etc.)
+├── constants/         # Initial seed data (LOBO_ and TIMOTHY_ defaults)
+├── hooks/             # Custom hooks (useDashboardMetrics for logic)
+├── utils/             # Helper functions (date formatting, export logic)
+├── views/             # Main page views (Dashboard, Planner, POView, etc.)
+├── App.jsx            # Main entry point & routing logic
+└── index.css          # Tailwind v4 configuration & global styles
+```

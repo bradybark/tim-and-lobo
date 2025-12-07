@@ -1,4 +1,4 @@
-// views/SettingsView.jsx
+// src/views/SettingsView.jsx
 import React, { useRef, useState } from 'react';
 import {
   UploadCloud,
@@ -8,6 +8,7 @@ import {
   ChevronUp,
   Users,
 } from 'lucide-react';
+import { SalesTrendReport } from '../components/SalesTrendReport';
 
 const SettingsView = ({
   onOpenVendors,
@@ -17,6 +18,8 @@ const SettingsView = ({
   cloudStatus,
   leadTimeStats,
   onExportLeadTimeReport,
+  snapshots,
+  pos,
 }) => {
   const fileInputRef = useRef(null);
   const [isLeadTimeOpen, setIsLeadTimeOpen] = useState(false); // collapsed by default
@@ -55,7 +58,7 @@ const SettingsView = ({
     return `${value.toFixed(1)} Days`;
   };
 
-  // ✅ Treat variance <= 0 as "On Avg Early"
+  // Treat variance <= 0 as "On Avg Early"
   const getStatusInfo = (variance) => {
     if (variance == null || Number.isNaN(variance)) {
       return {
@@ -330,6 +333,9 @@ const SettingsView = ({
             </div>
           )}
         </div>
+
+        {/* New SKU Sales Trend Analysis Report */}
+        <SalesTrendReport snapshots={snapshots || []} pos={pos || []} />
       </section>
     </div>
   );
