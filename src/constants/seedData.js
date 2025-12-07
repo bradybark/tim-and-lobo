@@ -67,9 +67,6 @@ export const LOBO_VENDORS = [];
 export const TIMOTHY_SNAPSHOTS = [];
 export const TIMOTHY_POS = [];
 export const TIMOTHY_SETTINGS = [
-  { sku: 'MST12', leadTime: 90, minDays: 60, targetMonths: 8 },
-  { sku: 'MST18', leadTime: 90, minDays: 60, targetMonths: 8 },
-  { sku: 'MST22', leadTime: 90, minDays: 60, targetMonths: 8 },
-  { sku: 'ACT', leadTime: 90, minDays: 60, targetMonths: 6 },
+//
 ];
 export const TIMOTHY_VENDORS = [];

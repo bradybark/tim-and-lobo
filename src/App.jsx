@@ -1,6 +1,6 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
-import { Briefcase, Sun, Moon, Package } from 'lucide-react';
+import { Briefcase, Sun, Moon, Package, Lock } from 'lucide-react';
 import CompanyDashboard from './views/CompanyDashboard';
 
 // --- Configuration ---
@@ -38,6 +38,12 @@ const OrgCard = ({ name, description, primary, onClick }) => {
 
 function App() {
   const [selectedOrg, setSelectedOrg] = useState(null); // 'lobo' | 'timothy' | null
+  
+  // -- Authentication State --
+  const [isAuthenticated, setIsAuthenticated] = useState(!APP_PASSWORD);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window === 'undefined') return true;
     return (
@@ -55,6 +61,70 @@ function App() {
   }, [isDarkMode]);
 
   const toggleTheme = () => setIsDarkMode((prev) => !prev);
+
+  // Handle Login Logic
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (passwordInput === APP_PASSWORD) {
+      setIsAuthenticated(true);
+      setErrorMsg('');
+    } else {
+      setErrorMsg('Incorrect password');
+      setPasswordInput('');
+    }
+  };
+
+  // If not authenticated, show lock screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
+        {/* Theme toggle in top-right */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="fixed top-4 right-4 inline-flex items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 p-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm"
+        >
+          {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        </button>
+
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-8 border border-slate-200 dark:border-slate-800">
+          <div className="flex justify-center mb-6">
+            <div className="p-3 bg-indigo-500/10 rounded-full">
+              <Lock className="w-8 h-8 text-indigo-500" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-center text-slate-900 dark:text-white mb-2">
+            Protected Access
+          </h2>
+          <p className="text-center text-slate-500 dark:text-slate-400 mb-6 text-sm">
+            Please enter the password to view the dashboard.
+          </p>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Enter Password"
+                className="w-full px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-colors"
+                autoFocus
+              />
+              {errorMsg && (
+                <p className="text-red-500 text-xs mt-2 ml-1 font-medium">{errorMsg}</p>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
+            >
+              Access Dashboard
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   // When an org is chosen, show that org's dashboard
   if (selectedOrg) {
