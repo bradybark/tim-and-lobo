@@ -59,28 +59,6 @@ npm run build
 npm run preview
 ```
 
-
-## 🖥️ Running Without a Server (Local File Mode)
-
-If you need to run the application directly from your file system (e.g., double-clicking index.html):
-
-Open vite.config.js.
-
-Ensure the base property is set to relative paths:
-```
-export default defineConfig({
-  plugins: [react()],
-  base: './', // Important for file:// protocol
-})
-```
-Run 
-```
-npm run build.
-```
-Open `dist/index.html` in your browser.
-
-*Note: Cloud Sync features may be restricted by some browsers when running via the file:// protocol due to security policies. Manual JSON export/import will always work.*
-
 📂 Project Structure
 
 ```src/
