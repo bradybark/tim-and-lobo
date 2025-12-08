@@ -27,7 +27,7 @@ A comprehensive, local-first inventory management application built with React, 
 - Data Handling: Custom hooks (useDashboardMetrics) for business logic separation and memoized calculations.
 - Exporting: exceljs and file-saver for generating reports.
 
-##📦 Installation & Setup
+## 📦 Installation & Setup
 
 1. Clone the repository
 ```
