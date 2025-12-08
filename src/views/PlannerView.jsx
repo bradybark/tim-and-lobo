@@ -1,4 +1,4 @@
-// views/PlannerView.jsx
+// src/views/PlannerView.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   FileSpreadsheet,
@@ -6,9 +6,9 @@ import {
   HelpCircle,
   Camera,
   Upload,
+  Calendar
 } from 'lucide-react';
 
-// Local date formatter (MM/DD/YYYY)
 const formatDate = (dateLike) => {
   if (!dateLike) return '-';
   const date = new Date(dateLike);
@@ -113,6 +113,9 @@ const PlannerView = ({
   updateSkuSetting,
   handleExportExcel,
   handleExportAll,
+  // New props
+  rateParams,
+  setRateParams
 }) => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef(null);
@@ -133,13 +136,55 @@ const PlannerView = ({
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-      {/* Export menu */}
-      <div className="p-4 flex justify-end">
+      {/* Control Bar */}
+      <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        
+        {/* Daily Rate Controls */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-gray-50 dark:bg-gray-900/50 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            <Calendar className="w-4 h-4 text-indigo-500" />
+            <span>Sales Rate Basis:</span>
+          </div>
+          
+          <select 
+            value={rateParams.timeframe}
+            onChange={(e) => setRateParams(prev => ({ ...prev, timeframe: e.target.value }))}
+            className="text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md py-1.5 px-3 focus:ring-2 focus:ring-indigo-500 outline-none text-gray-900 dark:text-white"
+          >
+            <option value="last-period">Most Recent Snapshot (Default)</option>
+            <option value="3m">Average: Last 3 Months</option>
+            <option value="6m">Average: Last 6 Months</option>
+            <option value="1y">Average: Last 1 Year</option>
+            <option value="custom">Custom Date Range</option>
+          </select>
+
+          {rateParams.timeframe === 'custom' && (
+            <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
+              <input 
+                type="date"
+                value={rateParams.customStart}
+                onChange={(e) => setRateParams(prev => ({ ...prev, customStart: e.target.value }))}
+                className="text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md py-1 px-2 text-gray-900 dark:text-white"
+                title="Start Date"
+              />
+              <span className="text-gray-400">-</span>
+              <input 
+                type="date"
+                value={rateParams.customEnd}
+                onChange={(e) => setRateParams(prev => ({ ...prev, customEnd: e.target.value }))}
+                className="text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md py-1 px-2 text-gray-900 dark:text-white"
+                title="End Date"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Export Menu */}
         <div className="relative" ref={exportMenuRef}>
           <button
             type="button"
             onClick={() => setShowExportMenu((prev) => !prev)}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded transition-colors"
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold py-2 px-4 rounded transition-colors shadow-sm"
           >
             <FileSpreadsheet className="w-4 h-4" />
             Export Options
@@ -207,7 +252,7 @@ const PlannerView = ({
               <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
                 <TooltipHeader
                   title="Daily Rate"
-                  tooltip="Average units sold per day"
+                  tooltip={`Average units sold per day. Basis: ${plannerData[0]?.usedPeriodLabel || 'Selected Period'}`}
                 />
               </th>
               <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">

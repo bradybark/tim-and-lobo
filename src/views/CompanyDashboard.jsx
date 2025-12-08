@@ -42,7 +42,7 @@ const CompanyDashboard = ({
   const [companyName] = useState(initialCompanyName);
   const [activeTab, setActiveTab] = useState('inventory');
   
-  // --- Data State (Fixed to read from LocalStorage) ---
+  // --- Data State ---
   const [snapshots, setSnapshots] = useState(() => 
     loadData(`${orgKey}_snapshots`, isTimothy ? TIMOTHY_SNAPSHOTS : LOBO_SNAPSHOTS)
   );
@@ -59,14 +59,26 @@ const CompanyDashboard = ({
     loadData(`${orgKey}_images`, {})
   );
 
+  // --- NEW: Sales Rate Config State ---
+  const [rateParams, setRateParams] = useState({
+    timeframe: 'last-period', // 'last-period', '3m', '6m', '1y', 'custom'
+    customStart: '',
+    customEnd: ''
+  });
+
   // Cloud Sync State
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
 
-  // --- 1. Calculations Hook ---
-  const { plannerData, leadTimeStats } = useDashboardMetrics({ snapshots, pos, settings });
+  // --- 1. Calculations Hook (Pass rateParams) ---
+  const { plannerData, leadTimeStats } = useDashboardMetrics({ 
+    snapshots, 
+    pos, 
+    settings, 
+    rateParams // <--- Passed to hook
+  });
 
-  // --- Auto-Save Effect (Fixed) ---
+  // --- Auto-Save Effect ---
   useEffect(() => {
     localStorage.setItem(`${orgKey}_snapshots`, JSON.stringify(snapshots));
     localStorage.setItem(`${orgKey}_pos`, JSON.stringify(pos));
@@ -244,6 +256,9 @@ const CompanyDashboard = ({
               updateSkuSetting={updateSkuSetting}
               handleExportExcel={handleExportExcelAction}
               handleExportAll={handleExportAllAction}
+              // --- Pass Rate Params Controls ---
+              rateParams={rateParams}
+              setRateParams={setRateParams}
             />
           )}
           {activeTab === 'inventory' && (
