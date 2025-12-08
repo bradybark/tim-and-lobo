@@ -20,6 +20,17 @@ import {
   TIMOTHY_SNAPSHOTS, TIMOTHY_POS, TIMOTHY_SETTINGS, TIMOTHY_VENDORS
 } from '../constants/seedData';
 
+// --- Helper to load data from LocalStorage ---
+const loadData = (key, fallback) => {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : fallback;
+  } catch (e) {
+    console.error("Error loading data", e);
+    return fallback;
+  }
+};
+
 const CompanyDashboard = ({
   orgKey = 'lobo',
   initialCompanyName = 'Lobo Tool Company',
@@ -31,21 +42,40 @@ const CompanyDashboard = ({
   const [companyName] = useState(initialCompanyName);
   const [activeTab, setActiveTab] = useState('inventory');
   
-  // Data State
-  const [snapshots, setSnapshots] = useState(() => isTimothy ? TIMOTHY_SNAPSHOTS : LOBO_SNAPSHOTS);
-  const [pos, setPos] = useState(() => isTimothy ? TIMOTHY_POS : LOBO_POS);
-  const [settings, setSettings] = useState(() => isTimothy ? TIMOTHY_SETTINGS : LOBO_SETTINGS);
-  const [vendors, setVendors] = useState(() => isTimothy ? TIMOTHY_VENDORS : LOBO_VENDORS);
-  const [skuImages, setSkuImages] = useState({});
+  // --- Data State (Fixed to read from LocalStorage) ---
+  const [snapshots, setSnapshots] = useState(() => 
+    loadData(`${orgKey}_snapshots`, isTimothy ? TIMOTHY_SNAPSHOTS : LOBO_SNAPSHOTS)
+  );
+  const [pos, setPos] = useState(() => 
+    loadData(`${orgKey}_pos`, isTimothy ? TIMOTHY_POS : LOBO_POS)
+  );
+  const [settings, setSettings] = useState(() => 
+    loadData(`${orgKey}_settings`, isTimothy ? TIMOTHY_SETTINGS : LOBO_SETTINGS)
+  );
+  const [vendors, setVendors] = useState(() => 
+    loadData(`${orgKey}_vendors`, isTimothy ? TIMOTHY_VENDORS : LOBO_VENDORS)
+  );
+  const [skuImages, setSkuImages] = useState(() => 
+    loadData(`${orgKey}_images`, {})
+  );
 
   // Cloud Sync State
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
 
-  // 1. Calculations Hook
+  // --- 1. Calculations Hook ---
   const { plannerData, leadTimeStats } = useDashboardMetrics({ snapshots, pos, settings });
 
-  // 2. Handlers
+  // --- Auto-Save Effect (Fixed) ---
+  useEffect(() => {
+    localStorage.setItem(`${orgKey}_snapshots`, JSON.stringify(snapshots));
+    localStorage.setItem(`${orgKey}_pos`, JSON.stringify(pos));
+    localStorage.setItem(`${orgKey}_settings`, JSON.stringify(settings));
+    localStorage.setItem(`${orgKey}_vendors`, JSON.stringify(vendors));
+    localStorage.setItem(`${orgKey}_images`, JSON.stringify(skuImages));
+  }, [snapshots, pos, settings, vendors, skuImages, orgKey]);
+
+  // --- 2. Handlers ---
   const handleImageUpload = useCallback((sku, dataUrl) => {
     setSkuImages((prev) => ({ ...prev, [sku]: dataUrl }));
   }, []);
@@ -110,7 +140,7 @@ const CompanyDashboard = ({
     setVendors((prev) => prev.some(v => v.name === trimmed) ? prev : [...prev, { id: Date.now(), name: trimmed }]);
   };
 
-  // 3. Export Handlers
+  // --- 3. Export Handlers ---
   const getFileName = (suffix) => `${orgKey === 'timothy' ? 'timothy' : 'lobo'}_${suffix}`;
   
   const handleExportExcelAction = () => exportPlannerExcel(plannerData, getFileName('reorder_planner.xlsx'));
@@ -134,7 +164,7 @@ const CompanyDashboard = ({
     alert('Backup imported successfully.');
   };
 
-  // 4. Cloud Sync Logic
+  // --- 4. Cloud Sync Logic ---
   const handleLinkCloudFile = async () => {
     if (!window.showSaveFilePicker) return alert('Cloud sync requires Chrome/Edge/Opera.');
     try {
@@ -158,7 +188,7 @@ const CompanyDashboard = ({
     sync();
   }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName]);
 
-  // 5. Render
+  // --- 5. Render ---
   const tabs = [
     { id: 'inventory', label: 'Inventory Log', icon: Package },
     { id: 'pos', label: 'Purchase Orders', icon: Truck },
@@ -251,7 +281,6 @@ const CompanyDashboard = ({
               cloudStatus={cloudStatus}
               leadTimeStats={leadTimeStats}
               onExportLeadTimeReport={handleExportLeadTimeAction}
-              // PASSED DATA FOR NEW REPORT
               snapshots={snapshots}
               pos={pos}
             />
