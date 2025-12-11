@@ -1,6 +1,9 @@
-// views/POView.jsx
-import React, { useState, useRef, useEffect } from 'react';
+// src/views/POView.jsx
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Plus, Trash2, XCircle, Check, ChevronDown } from 'lucide-react';
+import { VendorCell } from '../components/VendorCell';
+import { useTable } from '../hooks/useTable';
+import { SortableHeaderCell } from '../components/SortableHeaderCell';
 
 const formatDate = (dateLike) => {
   if (!dateLike) return '-';
@@ -11,151 +14,6 @@ const formatDate = (dateLike) => {
     day: 'numeric',
     year: 'numeric',
   });
-};
-
-// Reusable vendor dropdown cell (with inline add-new modal)
-const VendorCell = ({ currentVendor, allVendors, onSelect, onAddVendor }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [newVendorName, setNewVendorName] = useState('');
-  const [saveStatus, setSaveStatus] = useState('idle'); // idle | success | error
-  const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleSaveNew = () => {
-    const trimmed = newVendorName.trim();
-    if (!trimmed) {
-      setSaveStatus('error');
-      setTimeout(() => setSaveStatus('idle'), 2000);
-      return;
-    }
-    if (allVendors.some((v) => v.name === trimmed)) {
-      setSaveStatus('error');
-      setTimeout(() => setSaveStatus('idle'), 2000);
-      return;
-    }
-
-    onAddVendor(trimmed);
-    setSaveStatus('success');
-    setTimeout(() => {
-      setSaveStatus('idle');
-      setShowModal(false);
-      setNewVendorName('');
-      setIsOpen(false);
-    }, 1000);
-  };
-
-  const renderVendorName = (v) => {
-    if (typeof v === 'string') return v;
-    if (typeof v === 'object' && v.name) return v.name;
-    return 'Unknown Vendor';
-  };
-
-  return (
-    <div className="relative" ref={dropdownRef}>
-      <div
-        onClick={() => setIsOpen((prev) => !prev)}
-        className="cursor-pointer px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-sm text-gray-700 dark:text-gray-300 hover:border-indigo-500 shadow-sm"
-      >
-        {currentVendor || (
-          <span className="text-gray-400 italic">Select Vendor</span>
-        )}
-      </div>
-
-      {isOpen && (
-        <div className="absolute z-50 mt-1 w-48 bg-white dark:bg-gray-700 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 overflow-hidden">
-          <div className="max-h-40 overflow-y-auto">
-            {allVendors.map((v) => (
-              <div
-                key={v.id}
-                onClick={() => {
-                  onSelect(renderVendorName(v));
-                  setIsOpen(false);
-                }}
-                className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer"
-              >
-                {renderVendorName(v)}
-              </div>
-            ))}
-            {allVendors.length === 0 && (
-              <div className="px-4 py-2 text-xs text-gray-400">
-                No vendors yet
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setShowModal(true);
-              setIsOpen(false);
-            }}
-            className="w-full px-4 py-2 bg-gray-50 dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-600 flex items-center gap-2 border-t border-gray-200 dark:border-gray-600"
-          >
-            <Plus className="w-3 h-3" />
-            Add New Vendor
-          </button>
-        </div>
-      )}
-
-      {showModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-80">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
-              Add Vendor
-            </h3>
-            <input
-              type="text"
-              value={newVendorName}
-              onChange={(e) => setNewVendorName(e.target.value)}
-              placeholder="Vendor Name"
-              className="w-full border rounded p-2 mb-4 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600"
-            />
-            <div className="flex justify-between items-center">
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="text-gray-500 hover:text-gray-700 dark:text-gray-400"
-              >
-                Cancel
-              </button>
-
-              <div className="flex items-center gap-2">
-                {saveStatus === 'error' && (
-                  <span className="text-red-500 text-sm flex items-center gap-1">
-                    <XCircle className="w-4 h-4" />
-                    Error
-                  </span>
-                )}
-                {saveStatus === 'success' && (
-                  <span className="text-green-500 text-sm flex items-center gap-1 animate-bounce-short">
-                    <Check className="w-4 h-4" />
-                    Saved
-                  </span>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleSaveNew}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 };
 
 const POView = ({
@@ -180,6 +38,23 @@ const POView = ({
     if (days < 0) return `${Math.abs(days)} Days Late`;
     return 'On Time';
   };
+
+  // Pre-process POS to include calculated fields for sorting
+  const preparedPos = useMemo(() => {
+    return pos.map(p => {
+      let daysDiff = null;
+      let status = p.received ? 'Received' : 'On Order';
+      if (p.received && p.receivedDate && p.eta) {
+        const etaDate = new Date(p.eta);
+        const recvDate = new Date(p.receivedDate);
+        const timeDiff = etaDate - recvDate;
+        daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+      }
+      return { ...p, daysDiff, status };
+    });
+  }, [pos]);
+
+  const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(preparedPos, { key: 'orderDate', direction: 'desc' });
 
   return (
     <div className="space-y-6">
@@ -269,33 +144,15 @@ const POView = ({
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  PO #
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Product
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Vendor
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Order Date
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Qty
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  ETA
-                </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Received Date
-                </th>
-                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Late/Early
-                </th>
+                <SortableHeaderCell label="PO #" sortKey="poNumber" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.poNumber} />
+                <SortableHeaderCell label="Product" sortKey="sku" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.sku} />
+                <SortableHeaderCell label="Vendor" sortKey="vendor" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.vendor} />
+                <SortableHeaderCell label="Order Date" sortKey="orderDate" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.orderDate} />
+                <SortableHeaderCell label="Qty" sortKey="qty" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.qty} className="text-right" />
+                <SortableHeaderCell label="ETA" sortKey="eta" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.eta} />
+                <SortableHeaderCell label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.status} className="text-center" />
+                <SortableHeaderCell label="Received Date" sortKey="receivedDate" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.receivedDate} className="text-center" />
+                <SortableHeaderCell label="Late/Early" sortKey="daysDiff" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.daysDiff} className="text-center" />
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
                   Actions
                 </th>
@@ -303,19 +160,7 @@ const POView = ({
             </thead>
 
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {[...pos]
-                .sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate))
-                .map((p) => {
-                  let daysDiff = null;
-                  if (p.received && p.receivedDate && p.eta) {
-                    const etaDate = new Date(p.eta);
-                    const recvDate = new Date(p.receivedDate);
-                    const timeDiff = etaDate - recvDate;
-                    daysDiff = Math.ceil(
-                      timeDiff / (1000 * 60 * 60 * 24)
-                    );
-                  }
-
+              {processedData.map((p) => {
                   return (
                     <tr
                       key={p.id}
@@ -388,9 +233,9 @@ const POView = ({
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                        {daysDiff !== null ? (
-                          <span className={getDiffColor(daysDiff)}>
-                            {getDiffText(daysDiff)}
+                        {p.daysDiff !== null ? (
+                          <span className={getDiffColor(p.daysDiff)}>
+                            {getDiffText(p.daysDiff)}
                           </span>
                         ) : (
                           <span className="text-gray-400 text-xs">-</span>

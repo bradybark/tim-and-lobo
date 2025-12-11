@@ -1,4 +1,4 @@
-// views/VendorManagerView.jsx
+// src/views/VendorManagerView.jsx
 import React, { useState } from 'react';
 import {
   ArrowLeft,
@@ -8,6 +8,8 @@ import {
   XCircle,
   Check,
 } from 'lucide-react';
+import { useTable } from '../hooks/useTable';
+import { SortableHeaderCell } from '../components/SortableHeaderCell';
 
 const safeName = (v) =>
   typeof v?.name === 'object' && v.name?.name ? v.name.name : v.name;
@@ -16,6 +18,16 @@ const VendorManagerView = ({ vendors, updateVendors, onBack }) => {
   const [editingVendor, setEditingVendor] = useState(null); // null = list, object = edit/add
   const [saveStatus, setSaveStatus] = useState('idle'); // idle | success | error
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Normalize data for sorting (handle safeName issue)
+  const preparedVendors = React.useMemo(() => {
+    return vendors.map(v => ({
+      ...v,
+      displayName: safeName(v) // Add a flat field for easier sorting/filtering
+    }));
+  }, [vendors]);
+
+  const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(preparedVendors, { key: 'displayName', direction: 'asc' });
 
   const handleSave = (e) => {
     e.preventDefault();
@@ -194,31 +206,23 @@ const VendorManagerView = ({ vendors, updateVendors, onBack }) => {
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                Company
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                Contact
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                Email
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                Country
-              </th>
+              <SortableHeaderCell label="Company" sortKey="displayName" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.displayName} />
+              <SortableHeaderCell label="Contact" sortKey="contact" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.contact} />
+              <SortableHeaderCell label="Email" sortKey="email" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.email} />
+              <SortableHeaderCell label="Country" sortKey="country" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.country} />
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
                 Actions
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-            {vendors.map((v) => (
+            {processedData.map((v) => (
               <tr
                 key={v.id}
                 className="hover:bg-gray-50 dark:hover:bg-gray-700"
               >
                 <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">
-                  {safeName(v) || '-'}
+                  {v.displayName || '-'}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                   {v.contact || '-'}
@@ -247,7 +251,7 @@ const VendorManagerView = ({ vendors, updateVendors, onBack }) => {
                 </td>
               </tr>
             ))}
-            {vendors.length === 0 && (
+            {processedData.length === 0 && (
               <tr>
                 <td
                   colSpan={5}

@@ -18,14 +18,44 @@ export function ImageUploader({
   }
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      onUpload(imageKey, reader.result)
-    }
-    reader.readAsDataURL(file)
-  }
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Ensure it's an image
+    if (!file.type.startsWith('image/')) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        // Create canvas for resizing
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 300; // Limit width to 300px
+        
+        // Calculate new dimensions while maintaining aspect ratio
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Compress to JPEG with 0.7 quality
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        
+        onUpload(imageKey, compressedDataUrl);
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const containerClasses = `cursor-pointer overflow-hidden relative group flex items-center justify-center ${className}`
   const emptyStateClasses = currentImage

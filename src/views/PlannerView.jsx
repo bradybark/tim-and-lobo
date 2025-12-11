@@ -3,11 +3,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   FileSpreadsheet,
   ChevronDown,
-  HelpCircle,
-  Camera,
-  Upload,
   Calendar
 } from 'lucide-react';
+import { ImageUploader } from '../components/ImageUploader';
+import { TooltipHeader } from '../components/TooltipHeader';
+import { useTable } from '../hooks/useTable';
+import { SortableHeaderCell } from '../components/SortableHeaderCell';
 
 const formatDate = (dateLike) => {
   if (!dateLike) return '-';
@@ -20,92 +21,6 @@ const formatDate = (dateLike) => {
   });
 };
 
-const TooltipHeader = ({ title, tooltip, className = '' }) => (
-  <div
-    className={`group relative inline-flex items-center gap-1 cursor-help ${className}`}
-  >
-    <span>{title}</span>
-    <HelpCircle className="w-3 h-3" />
-    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-48 p-2 bg-gray-900 text-white text-xs rounded shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center font-normal normal-case border border-gray-700">
-      {tooltip}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900" />
-    </div>
-  </div>
-);
-
-const ImageUploader = ({
-  imageKey,
-  currentImage,
-  onUpload,
-  className = '',
-  placeholder,
-  objectFit = 'cover',
-}) => {
-  const fileInputRef = useRef(null);
-
-  const handleClick = (e) => {
-    e.stopPropagation();
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        onUpload(imageKey, reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const containerClasses = `cursor-pointer overflow-hidden relative group flex items-center justify-center ${className}`;
-  const emptyStateClasses = currentImage
-    ? ''
-    : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600';
-
-  return (
-    <div className="relative inline-block w-full h-full">
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept="image/*"
-        className="hidden"
-      />
-
-      <div
-        onClick={handleClick}
-        className={`${containerClasses} ${emptyStateClasses}`}
-        title="Upload image"
-      >
-        {currentImage ? (
-          <>
-            <img
-              src={currentImage}
-              alt="Uploaded"
-              className={`w-full h-full object-${objectFit} object-center`}
-            />
-            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all flex items-center justify-center">
-              <span className="text-white opacity-0 group-hover:opacity-100 scale-75">
-                <Camera className="w-4 h-4" />
-              </span>
-            </div>
-          </>
-        ) : (
-          placeholder || (
-            <span className="text-gray-400">
-              <Upload className="w-4 h-4" />
-            </span>
-          )
-        )}
-      </div>
-    </div>
-  );
-};
-
 const PlannerView = ({
   plannerData,
   skuImages,
@@ -113,12 +28,13 @@ const PlannerView = ({
   updateSkuSetting,
   handleExportExcel,
   handleExportAll,
-  // New props
   rateParams,
   setRateParams
 }) => {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef(null);
+
+  const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(plannerData);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -231,99 +147,38 @@ const PlannerView = ({
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 min-w-[200px]">
-                <TooltipHeader
-                  title="Product"
-                  tooltip="Product SKU and Image"
-                />
-              </th>
-              <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="Status"
-                  tooltip="Reorder status based on inventory levels"
-                />
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="Cur. Inv"
-                  tooltip="Current inventory on hand"
-                />
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="Daily Rate"
-                  tooltip={`Average units sold per day. Basis: ${plannerData[0]?.usedPeriodLabel || 'Selected Period'}`}
-                />
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="Days Left"
-                  tooltip="Estimated days until stockout"
-                />
-              </th>
+              <SortableHeaderCell 
+                label="Product" 
+                sortKey="sku" 
+                currentSort={sortConfig} 
+                onSort={handleSort} 
+                onFilter={handleFilter} 
+                filterValue={filters.sku}
+                className="sticky left-0 bg-gray-50 dark:bg-gray-700 z-10 min-w-[200px]"
+                tooltip="Product SKU and Image"
+              />
+              <SortableHeaderCell label="Status" sortKey="needsAction" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.needsAction} className="text-center" />
+              <SortableHeaderCell label="Cur. Inv" sortKey="currentInv" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.currentInv} className="text-right" />
+              <SortableHeaderCell label="Daily Rate" sortKey="dailyRate" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.dailyRate} className="text-right" />
+              <SortableHeaderCell label="Days Left" sortKey="daysRemaining" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.daysRemaining} className="text-right" />
 
               {/* Editable settings */}
-              <th className="px-3 py-3 text-center text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-50 dark:bg-indigo-900/20 border-l border-r border-indigo-100 dark:border-indigo-900/30 w-32">
-                <TooltipHeader
-                  title="LEAD TIME DAYS"
-                  tooltip="Days it takes for an order to arrive"
-                />
-              </th>
-              <th className="px-3 py-3 text-center text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-50 dark:bg-indigo-900/20 border-r border-indigo-100 dark:border-indigo-900/30 w-32">
-                <TooltipHeader
-                  title="MIN INV DAYS"
-                  tooltip="Safety buffer in days of stock"
-                />
-              </th>
-              <th className="px-3 py-3 text-center text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-50 dark:bg-indigo-900/20 border-r border-indigo-100 dark:border-indigo-900/30 w-32">
-                <TooltipHeader
-                  title="TARGET MO."
-                  tooltip="Desired months of stock upon arrival"
-                />
-              </th>
+              <SortableHeaderCell label="Lead Time" sortKey="settings.leadTime" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters['settings.leadTime']} className="bg-indigo-50 dark:bg-indigo-900/20 text-center text-indigo-700 w-32" />
+              <SortableHeaderCell label="Min Days" sortKey="settings.minDays" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters['settings.minDays']} className="bg-indigo-50 dark:bg-indigo-900/20 text-center text-indigo-700 w-32" />
+              <SortableHeaderCell label="Target Mo" sortKey="settings.targetMonths" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters['settings.targetMonths']} className="bg-indigo-50 dark:bg-indigo-900/20 text-center text-indigo-700 w-32" />
 
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="Trigger Qty"
-                  tooltip="Inventory level to trigger reorder"
-                />
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="Target Qty"
-                  tooltip="Ideal inventory quantity"
-                />
-              </th>
+              <SortableHeaderCell label="Trigger" sortKey="reorderTriggerLevel" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.reorderTriggerLevel} className="text-right" />
+              <SortableHeaderCell label="Target" sortKey="targetUnitLevel" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.targetUnitLevel} className="text-right" />
 
-              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="On Order"
-                  tooltip="Stock currently on the way"
-                />
-              </th>
-              <th className="px-3 py-3 text-right text-xs font-bold text-gray-700 dark:text-white uppercase bg-yellow-50 dark:bg-yellow-900/10">
-                <TooltipHeader
-                  title="Reorder Qty"
-                  tooltip="Amount needed to reach target"
-                />
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="Suggested Order"
-                  tooltip="Date to place order by"
-                />
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                <TooltipHeader
-                  title="Forecast Zero"
-                  tooltip="Estimated date of stockout"
-                />
-              </th>
+              <SortableHeaderCell label="On Order" sortKey="onOrder" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.onOrder} className="text-right" />
+              <SortableHeaderCell label="Reorder Qty" sortKey="reorderQty" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.reorderQty} className="bg-yellow-50 dark:bg-yellow-900/10 text-right text-gray-700 dark:text-white" />
+              <SortableHeaderCell label="Sug. Order" sortKey="suggestOrderDate" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.suggestOrderDate} />
+              <SortableHeaderCell label="Stockout" sortKey="zeroDate" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.zeroDate} />
             </tr>
           </thead>
 
           <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-            {plannerData.map((row) => {
+            {processedData.map((row) => {
               const isUrgent = row.needsAction;
               return (
                 <tr
@@ -435,7 +290,7 @@ const PlannerView = ({
               );
             })}
 
-            {plannerData.length === 0 && (
+            {processedData.length === 0 && (
               <tr>
                 <td
                   colSpan={14}

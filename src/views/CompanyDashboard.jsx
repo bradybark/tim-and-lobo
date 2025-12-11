@@ -70,21 +70,32 @@ const CompanyDashboard = ({
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
 
-  // --- 1. Calculations Hook (Pass rateParams) ---
+  // --- 1. Calculations Hook ---
   const { plannerData, leadTimeStats } = useDashboardMetrics({ 
     snapshots, 
     pos, 
     settings, 
-    rateParams // <--- Passed to hook
+    rateParams 
   });
 
-  // --- Auto-Save Effect ---
+  // --- Auto-Save Effect (Fixed for QuotaExceededError) ---
   useEffect(() => {
-    localStorage.setItem(`${orgKey}_snapshots`, JSON.stringify(snapshots));
-    localStorage.setItem(`${orgKey}_pos`, JSON.stringify(pos));
-    localStorage.setItem(`${orgKey}_settings`, JSON.stringify(settings));
-    localStorage.setItem(`${orgKey}_vendors`, JSON.stringify(vendors));
-    localStorage.setItem(`${orgKey}_images`, JSON.stringify(skuImages));
+    try {
+      localStorage.setItem(`${orgKey}_snapshots`, JSON.stringify(snapshots));
+      localStorage.setItem(`${orgKey}_pos`, JSON.stringify(pos));
+      localStorage.setItem(`${orgKey}_settings`, JSON.stringify(settings));
+      localStorage.setItem(`${orgKey}_vendors`, JSON.stringify(vendors));
+      
+      // Images are usually the heavy items causing the crash
+      localStorage.setItem(`${orgKey}_images`, JSON.stringify(skuImages));
+    } catch (error) {
+      if (error.name === 'QuotaExceededError' || error.code === 22) {
+        console.error('Local storage is full. Data could not be saved.');
+        alert('Storage Limit Reached: Unable to save changes (likely due to images). Please delete some images or clear old data.');
+      } else {
+        console.error('Error saving to localStorage:', error);
+      }
+    }
   }, [snapshots, pos, settings, vendors, skuImages, orgKey]);
 
   // --- 2. Handlers ---
@@ -256,7 +267,6 @@ const CompanyDashboard = ({
               updateSkuSetting={updateSkuSetting}
               handleExportExcel={handleExportExcelAction}
               handleExportAll={handleExportAllAction}
-              // --- Pass Rate Params Controls ---
               rateParams={rateParams}
               setRateParams={setRateParams}
             />

@@ -1,6 +1,8 @@
-// views/InventoryLogView.jsx
+// src/views/InventoryLogView.jsx
 import React, { useMemo } from 'react';
-import { Plus, HelpCircle } from 'lucide-react';
+import { Plus } from 'lucide-react';
+import { useTable } from '../hooks/useTable';
+import { SortableHeaderCell } from '../components/SortableHeaderCell';
 
 const formatDate = (dateLike) => {
   if (!dateLike) return '-';
@@ -13,19 +15,6 @@ const formatDate = (dateLike) => {
   });
 };
 
-const TooltipHeader = ({ title, tooltip, className = '' }) => (
-  <div
-    className={`group relative inline-flex items-center gap-1 cursor-help ${className}`}
-  >
-    <span>{title}</span>
-    <HelpCircle className="w-3 h-3" />
-    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-48 p-2 bg-gray-900 text-white text-xs rounded shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center font-normal normal-case border border-gray-700">
-      {tooltip}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900" />
-    </div>
-  </div>
-);
-
 const InventoryLogView = ({
   snapshots,
   handleAddSnapshot,
@@ -34,7 +23,7 @@ const InventoryLogView = ({
   pos,
   getDaysDiff,
 }) => {
-  // Same logic as original export: compute period metrics per snapshot
+  // Compute period metrics per snapshot
   const processedLog = useMemo(() => {
     const snapshotsBySku = {};
     snapshots.forEach((s) => {
@@ -49,7 +38,7 @@ const InventoryLogView = ({
       );
 
       skusSnaps.forEach((snap, index) => {
-        let prevDate = '-';
+        let prevDate = null;
         let prevQty = '-';
         let purchases = 0;
         let daysInPeriod = '-';
@@ -83,13 +72,15 @@ const InventoryLogView = ({
           purchases,
           daysInPeriod,
           unitsSold,
-          dailyRate,
+          dailyRate: dailyRate === '-' ? 0 : Number(dailyRate),
         });
       });
     });
 
-    return allRows.sort((a, b) => new Date(b.date) - new Date(a.date));
+    return allRows;
   }, [snapshots, pos, getDaysDiff]);
+
+  const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(processedLog, { key: 'date', direction: 'desc' });
 
   return (
     <div className="space-y-6">
@@ -154,54 +145,15 @@ const InventoryLogView = ({
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Date
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  Product
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  <TooltipHeader
-                    title="Ending Inv"
-                    tooltip="Counted quantity on this date"
-                  />
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  <TooltipHeader
-                    title="Purchases"
-                    tooltip="Stock received since previous count"
-                  />
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  <TooltipHeader
-                    title="Prev Date"
-                    tooltip="Date of the previous count"
-                  />
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  <TooltipHeader
-                    title="Prev Inv"
-                    tooltip="Inventory amount at previous count"
-                  />
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  <TooltipHeader
-                    title="Days"
-                    tooltip="Days elapsed since previous count"
-                  />
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  <TooltipHeader
-                    title="Sold"
-                    tooltip="Units sold in this period"
-                  />
-                </th>
-                <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
-                  <TooltipHeader
-                    title="Daily Rate"
-                    tooltip="Calculated daily sales rate for this specific period"
-                  />
-                </th>
+                <SortableHeaderCell label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.date} />
+                <SortableHeaderCell label="Product" sortKey="sku" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.sku} />
+                <SortableHeaderCell label="Ending Inv" sortKey="qty" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.qty} className="text-right" tooltip="Counted quantity on this date" />
+                <SortableHeaderCell label="Purchases" sortKey="purchases" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.purchases} className="text-right" tooltip="Stock received since previous count" />
+                <SortableHeaderCell label="Prev Date" sortKey="prevDate" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.prevDate} className="text-right" />
+                <SortableHeaderCell label="Prev Inv" sortKey="prevQty" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.prevQty} className="text-right" />
+                <SortableHeaderCell label="Days" sortKey="daysInPeriod" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.daysInPeriod} className="text-right" tooltip="Days elapsed since previous count" />
+                <SortableHeaderCell label="Sold" sortKey="unitsSold" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.unitsSold} className="text-right" tooltip="Units sold in this period" />
+                <SortableHeaderCell label="Daily Rate" sortKey="dailyRate" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.dailyRate} className="text-right" tooltip="Calculated daily sales rate for this specific period" />
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">
                   Action
                 </th>
@@ -209,7 +161,7 @@ const InventoryLogView = ({
             </thead>
 
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {processedLog.map((s) => (
+              {processedData.map((s) => (
                 <tr
                   key={s.id}
                   className="hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -248,7 +200,7 @@ const InventoryLogView = ({
                     {s.unitsSold}
                   </td>
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-right font-medium text-blue-600 dark:text-blue-400">
-                    {s.dailyRate}
+                    {s.dailyRate === 0 ? 0 : s.dailyRate.toFixed(2)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                     <button
@@ -262,7 +214,7 @@ const InventoryLogView = ({
                 </tr>
               ))}
 
-              {processedLog.length === 0 && (
+              {processedData.length === 0 && (
                 <tr>
                   <td
                     colSpan={10}
