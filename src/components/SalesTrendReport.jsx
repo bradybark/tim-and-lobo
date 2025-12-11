@@ -1,5 +1,5 @@
 // src/components/SalesTrendReport.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { LineChart, Calendar, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { getDaysDiff } from '../utils/date';
 
@@ -13,7 +13,8 @@ const TIME_RANGES = [
 export function SalesTrendReport({ snapshots, pos }) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedSku, setSelectedSku] = useState('');
-  const [timeframe,XH] = useState('3m');
+  // FIXED: Corrected typo 'XH' to 'setTimeframe' so the onChange handler works
+  const [timeframe, setTimeframe] = useState('3m');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
@@ -24,7 +25,8 @@ export function SalesTrendReport({ snapshots, pos }) {
   }, [snapshots]);
 
   // Set default SKU if not selected
-  useMemo(() => {
+  // FIXED: Changed useMemo to useEffect for setting state side-effect
+  useEffect(() => {
     if (!selectedSku && uniqueSkus.length > 0) {
       setSelectedSku(uniqueSkus[0]);
     }
@@ -133,8 +135,9 @@ export function SalesTrendReport({ snapshots, pos }) {
     const maxDate = new Date(filteredData[filteredData.length - 1].date).getTime();
     const timeSpan = maxDate - minDate || 1;
 
-    const getX =yb =>
-      padding + ((new Date(yb.date).getTime() - minDate) / timeSpan) * chartW;
+    // FIXED: Renamed parameter yb -> d for clarity
+    const getX = (d) =>
+      padding + ((new Date(d.date).getTime() - minDate) / timeSpan) * chartW;
     const getY = (val) => height - padding - (val / maxRate) * chartH;
 
     // Generate Path
