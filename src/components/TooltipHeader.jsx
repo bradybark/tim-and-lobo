@@ -6,7 +6,7 @@ export function TooltipHeader({ title, tooltip, className = '' }) {
   return (
     <div className={`group relative inline-flex items-center gap-1 cursor-help ${className}`}>
       <span>{title}</span>
-      <Icons.HelpCircle />
+      <Icons.HelpCircle className="w-3.5 h-3.5 text-gray-400" />
       <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-48 p-2 bg-gray-900 text-white text-xs rounded shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 text-center font-normal normal-case border border-gray-700">
         {tooltip}
         <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900" />

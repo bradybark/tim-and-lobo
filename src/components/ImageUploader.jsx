@@ -32,7 +32,6 @@ export function ImageUploader({
         const canvas = document.createElement('canvas');
         const MAX_WIDTH = 300; // Limit width to 300px
         
-        // Calculate new dimensions while maintaining aspect ratio
         let width = img.width;
         let height = img.height;
         
@@ -86,14 +85,14 @@ export function ImageUploader({
             />
             <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all flex items-center justify-center">
               <span className="text-white opacity-0 group-hover:opacity-100 scale-75">
-                <Icons.Camera />
+                <Icons.Camera className="w-6 h-6" />
               </span>
             </div>
           </>
         ) : (
           placeholder || (
             <span className="text-gray-400">
-              <Icons.Upload />
+              <Icons.Upload className="w-6 h-6" />
             </span>
           )
         )}
