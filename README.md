@@ -1,6 +1,6 @@
 # Tim & Lobo Inventory Manager
 
-A modern, local-first inventory management dashboard built for **Lobo Tool Company** and **Timothy's Fine Cigars**.
+A modern, local-first inventory management dashboard.
 
 This application is designed to be **offline-first**, storing all data locally in the browser's IndexedDB while offering "Cloud Sync" capabilities via the File System Access API.
 
