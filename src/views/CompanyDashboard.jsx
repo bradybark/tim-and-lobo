@@ -1,6 +1,8 @@
 // src/views/CompanyDashboard.jsx
 import React, { useState, useCallback, useEffect } from 'react';
 import { Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
+import { get, set } from 'idb-keyval'; // Requires: npm install idb-keyval
+
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
 import POView from './POView';
@@ -20,14 +22,20 @@ import {
   TIMOTHY_SNAPSHOTS, TIMOTHY_POS, TIMOTHY_SETTINGS, TIMOTHY_VENDORS
 } from '../constants/seedData';
 
-// --- Helper to load data from LocalStorage ---
-const loadData = (key, fallback) => {
+// --- Helper: Convert Object URL (or Blob) back to Base64 for JSON Export ---
+const urlToBase64 = async (url) => {
   try {
-    const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : fallback;
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   } catch (e) {
-    console.error("Error loading data", e);
-    return fallback;
+    console.error('Error converting image to base64', e);
+    return null;
   }
 };
 
@@ -42,26 +50,17 @@ const CompanyDashboard = ({
   const [companyName] = useState(initialCompanyName);
   const [activeTab, setActiveTab] = useState('inventory');
   
-  // --- Data State ---
-  const [snapshots, setSnapshots] = useState(() => 
-    loadData(`${orgKey}_snapshots`, isTimothy ? TIMOTHY_SNAPSHOTS : LOBO_SNAPSHOTS)
-  );
-  const [pos, setPos] = useState(() => 
-    loadData(`${orgKey}_pos`, isTimothy ? TIMOTHY_POS : LOBO_POS)
-  );
-  const [settings, setSettings] = useState(() => 
-    loadData(`${orgKey}_settings`, isTimothy ? TIMOTHY_SETTINGS : LOBO_SETTINGS)
-  );
-  const [vendors, setVendors] = useState(() => 
-    loadData(`${orgKey}_vendors`, isTimothy ? TIMOTHY_VENDORS : LOBO_VENDORS)
-  );
-  const [skuImages, setSkuImages] = useState(() => 
-    loadData(`${orgKey}_images`, {})
-  );
+  // --- Data State (Initialized Empty, Loaded Async) ---
+  const [snapshots, setSnapshots] = useState([]);
+  const [pos, setPos] = useState([]);
+  const [settings, setSettings] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [skuImages, setSkuImages] = useState({}); // Stores ObjectURLs (strings) for display
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  // --- NEW: Sales Rate Config State ---
+  // --- Sales Rate Config State ---
   const [rateParams, setRateParams] = useState({
-    timeframe: 'last-period', // 'last-period', '3m', '6m', '1y', 'custom'
+    timeframe: 'last-period', 
     customStart: '',
     customEnd: ''
   });
@@ -70,7 +69,103 @@ const CompanyDashboard = ({
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
 
-  // --- 1. Calculations Hook ---
+  // --- 1. Load Data with Migration Logic (LocalStorage -> IndexedDB) ---
+  useEffect(() => {
+    async function loadAllData() {
+      try {
+        // Helper: Try IDB -> then LocalStorage (Migrate) -> then Fallback
+        const load = async (key, fallback) => {
+          // 1. Try IndexedDB
+          let val = await get(key);
+          
+          // 2. If empty, try LocalStorage (Migration Step)
+          if (!val) {
+            const lsVal = localStorage.getItem(key);
+            if (lsVal) {
+              try {
+                val = JSON.parse(lsVal);
+                // Migrate it to IDB immediately
+                await set(key, val); 
+                console.log(`Migrated ${key} from LocalStorage to IndexedDB`);
+              } catch (e) {
+                console.error(`Error parsing LS key ${key}`, e);
+              }
+            }
+          }
+
+          // 3. If still empty, use fallback
+          return val || fallback;
+        };
+
+        // Load Tables
+        const savedSnaps = await load(`${orgKey}_snapshots`, isTimothy ? TIMOTHY_SNAPSHOTS : LOBO_SNAPSHOTS);
+        setSnapshots(savedSnaps);
+
+        const savedPos = await load(`${orgKey}_pos`, isTimothy ? TIMOTHY_POS : LOBO_POS);
+        setPos(savedPos);
+
+        const savedSettings = await load(`${orgKey}_settings`, isTimothy ? TIMOTHY_SETTINGS : LOBO_SETTINGS);
+        setSettings(savedSettings);
+
+        const savedVendors = await load(`${orgKey}_vendors`, isTimothy ? TIMOTHY_VENDORS : LOBO_VENDORS);
+        setVendors(savedVendors);
+
+        // Load Images (Special handling for migration)
+        let savedImages = await get(`${orgKey}_images`);
+        
+        // Migration for images: Check LocalStorage if IDB is empty
+        if (!savedImages) {
+          const lsImages = localStorage.getItem(`${orgKey}_images`);
+          if (lsImages) {
+            try {
+              savedImages = JSON.parse(lsImages);
+              // Note: These are legacy Base64 strings. We save them as-is to IDB.
+              await set(`${orgKey}_images`, savedImages);
+              console.log(`Migrated images for ${orgKey} from LocalStorage to IndexedDB`);
+            } catch (e) {
+              console.error("Error migrating images", e);
+            }
+          }
+        }
+
+        // Convert stored images (Blobs or Base64) to Object URLs for Display
+        if (savedImages && typeof savedImages === 'object') {
+          const urlMap = {};
+          for (const [sku, blobOrString] of Object.entries(savedImages)) {
+            if (blobOrString instanceof Blob) {
+              // New format: Blob -> Object URL
+              urlMap[sku] = URL.createObjectURL(blobOrString);
+            } else {
+              // Legacy format: Base64 String -> Use as is
+              urlMap[sku] = blobOrString;
+            }
+          }
+          setSkuImages(urlMap);
+        } else {
+          setSkuImages({});
+        }
+
+        setDataLoaded(true);
+      } catch (err) {
+        console.error("Failed to load data", err);
+        // Fallback to prevent white screen
+        setDataLoaded(true);
+      }
+    }
+    loadAllData();
+  }, [orgKey, isTimothy]);
+
+  // --- 2. Auto-Save to IndexedDB (Immediate for small data) ---
+  useEffect(() => {
+    if (!dataLoaded) return;
+    set(`${orgKey}_snapshots`, snapshots);
+    set(`${orgKey}_pos`, pos);
+    set(`${orgKey}_settings`, settings);
+    set(`${orgKey}_vendors`, vendors);
+    // Note: skuImages are saved individually in handleImageUpload to avoid overhead
+  }, [snapshots, pos, settings, vendors, orgKey, dataLoaded]);
+
+  // --- 3. Calculations Hook ---
   const { plannerData, leadTimeStats } = useDashboardMetrics({ 
     snapshots, 
     pos, 
@@ -78,30 +173,28 @@ const CompanyDashboard = ({
     rateParams 
   });
 
-  // --- Auto-Save Effect (Fixed for QuotaExceededError) ---
-  useEffect(() => {
-    try {
-      localStorage.setItem(`${orgKey}_snapshots`, JSON.stringify(snapshots));
-      localStorage.setItem(`${orgKey}_pos`, JSON.stringify(pos));
-      localStorage.setItem(`${orgKey}_settings`, JSON.stringify(settings));
-      localStorage.setItem(`${orgKey}_vendors`, JSON.stringify(vendors));
-      
-      // Images are usually the heavy items causing the crash
-      localStorage.setItem(`${orgKey}_images`, JSON.stringify(skuImages));
-    } catch (error) {
-      if (error.name === 'QuotaExceededError' || error.code === 22) {
-        console.error('Local storage is full. Data could not be saved.');
-        alert('Storage Limit Reached: Unable to save changes (likely due to images). Please delete some images or clear old data.');
-      } else {
-        console.error('Error saving to localStorage:', error);
+  // --- 4. Handlers ---
+  
+  // UPDATED: Handle Blob upload
+  const handleImageUpload = useCallback(async (sku, blob) => {
+    // 1. Update Display State (Revoke old URL to free memory)
+    setSkuImages((prev) => {
+      const oldUrl = prev[sku];
+      if (oldUrl && oldUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(oldUrl);
       }
-    }
-  }, [snapshots, pos, settings, vendors, skuImages, orgKey]);
+      return { ...prev, [sku]: URL.createObjectURL(blob) };
+    });
 
-  // --- 2. Handlers ---
-  const handleImageUpload = useCallback((sku, dataUrl) => {
-    setSkuImages((prev) => ({ ...prev, [sku]: dataUrl }));
-  }, []);
+    // 2. Save the actual Blob to IndexedDB
+    try {
+      const currentImages = (await get(`${orgKey}_images`)) || {};
+      const updatedImages = { ...currentImages, [sku]: blob };
+      await set(`${orgKey}_images`, updatedImages);
+    } catch (err) {
+      console.error("Failed to save image to IDB", err);
+    }
+  }, [orgKey]);
 
   const updateSkuSetting = useCallback((sku, field, value) => {
     const val = Number.isNaN(Number(value)) ? 0 : Number(value);
@@ -163,31 +256,70 @@ const CompanyDashboard = ({
     setVendors((prev) => prev.some(v => v.name === trimmed) ? prev : [...prev, { id: Date.now(), name: trimmed }]);
   };
 
-  // --- 3. Export Handlers ---
+  // --- Helper to Prepare Full Data for Export/Sync (Converts Blobs to Base64) ---
+  const prepareExportPayload = async () => {
+    const imagesBase64 = {};
+    for (const [sku, url] of Object.entries(skuImages)) {
+      if (url) {
+        imagesBase64[sku] = await urlToBase64(url);
+      }
+    }
+
+    return { 
+      version: 1, 
+      orgKey, 
+      companyName, 
+      exportedAt: new Date().toISOString(), 
+      snapshots, 
+      pos, 
+      settings, 
+      vendors, 
+      skuImages: imagesBase64 // Export as Base64 strings for JSON compatibility
+    };
+  };
+
+  // --- 5. Export Handlers ---
   const getFileName = (suffix) => `${orgKey === 'timothy' ? 'timothy' : 'lobo'}_${suffix}`;
   
   const handleExportExcelAction = () => exportPlannerExcel(plannerData, getFileName('reorder_planner.xlsx'));
-  
   const handleExportAllAction = () => exportFullWorkbook({ plannerData, snapshots, pos }, getFileName('inventory_workbook.xlsx'));
-  
   const handleExportLeadTimeAction = () => exportLeadTimeReport({ pos, settings }, getFileName(`lead_time_${new Date().toISOString().slice(0,10)}.xlsx`));
   
-  const handleExportBackup = () => {
-    const payload = { version: 1, orgKey, companyName, exportedAt: new Date().toISOString(), snapshots, pos, settings, vendors, skuImages };
+  const handleExportBackup = async () => {
+    const payload = await prepareExportPayload();
     exportJsonBackup(payload, getFileName(`backup_${new Date().toISOString().slice(0,10)}.json`));
   };
 
-  const handleImportBackup = (data) => {
+  const handleImportBackup = async (data) => {
     if (!data || typeof data !== 'object') return alert('Invalid backup file');
     if (data.snapshots) setSnapshots(data.snapshots);
     if (data.pos) setPos(data.pos);
     if (data.settings) setSettings(data.settings);
     if (data.vendors) setVendors(data.vendors);
-    if (data.skuImages) setSkuImages(data.skuImages);
+    
+    // Convert Base64 strings back to Blobs for IDB
+    if (data.skuImages) {
+      const newUrlMap = {};
+      const newBlobMap = {};
+      
+      for (const [sku, base64] of Object.entries(data.skuImages)) {
+        try {
+          const res = await fetch(base64);
+          const blob = await res.blob();
+          newBlobMap[sku] = blob;
+          newUrlMap[sku] = URL.createObjectURL(blob);
+        } catch (e) {
+          console.error("Error processing imported image", sku, e);
+        }
+      }
+      
+      setSkuImages(newUrlMap);
+      await set(`${orgKey}_images`, newBlobMap);
+    }
     alert('Backup imported successfully.');
   };
 
-  // --- 4. Cloud Sync Logic ---
+  // --- 6. Cloud Sync Logic (Debounced + Safety) ---
   const handleLinkCloudFile = async () => {
     if (!window.showSaveFilePicker) return alert('Cloud sync requires Chrome/Edge/Opera.');
     try {
@@ -197,21 +329,49 @@ const CompanyDashboard = ({
     } catch (err) { /* cancelled */ }
   };
 
+  // Debounced Sync Effect with "Close Protection"
   useEffect(() => {
-    if (!cloudFileHandle) return;
-    const sync = async () => {
+    if (!cloudFileHandle || !dataLoaded) return;
+
+    // 1. Notify user & Prevent Close
+    setCloudStatus('Waiting to sync...');
+    
+    // Safety Listener: Prevents closing tab while "Waiting"
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = 'Data is syncing. Are you sure you want to exit?';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // 2. Wait 2 seconds after the last change
+    const timeoutId = setTimeout(async () => {
       try {
-        const payload = { version: 1, orgKey, companyName, exportedAt: new Date().toISOString(), snapshots, pos, settings, vendors, skuImages };
+        setCloudStatus('Syncing...');
+        const payload = await prepareExportPayload();
         const writable = await cloudFileHandle.createWritable();
         await writable.write(JSON.stringify(payload, null, 2));
         await writable.close();
+        
         setCloudStatus(`Linked to ${cloudFileHandle.name} · Synced ${new Date().toLocaleTimeString()}`);
-      } catch (err) { setCloudStatus('Sync error'); }
-    };
-    sync();
-  }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName]);
+        
+        // 3. Sync Done: Safe to close
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      } catch (err) { 
+        console.error(err);
+        setCloudStatus('Sync error'); 
+      }
+    }, 2000);
 
-  // --- 5. Render ---
+    return () => {
+      clearTimeout(timeoutId);
+      // Clean up listener if component unmounts or effect re-runs
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName, dataLoaded]);
+
+  // --- 7. Render ---
+  if (!dataLoaded) return <div className="p-10 text-center text-gray-500">Loading database...</div>;
+
   const tabs = [
     { id: 'inventory', label: 'Inventory Log', icon: Package },
     { id: 'pos', label: 'Purchase Orders', icon: Truck },

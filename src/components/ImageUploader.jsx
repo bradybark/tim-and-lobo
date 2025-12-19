@@ -46,10 +46,12 @@ export function ImageUploader({
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Compress to JPEG with 0.7 quality
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
         
-        onUpload(imageKey, compressedDataUrl);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            onUpload(imageKey, blob);
+          }
+        }, 'image/jpeg', 0.7);
       };
       img.src = event.target.result;
     };
