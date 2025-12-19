@@ -1,7 +1,16 @@
 // src/views/CompanyDashboard.jsx
 import React, { useState, useCallback, useEffect } from 'react';
-import { Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
-import { get, set } from 'idb-keyval'; // Requires: npm install idb-keyval
+import { 
+  Package, 
+  ClipboardList, 
+  Truck, 
+  Sun, 
+  Moon, 
+  ArrowLeft, 
+  Settings as SettingsIcon,
+  AlertTriangle // <--- Added Icon
+} from 'lucide-react';
+import { get, set } from 'idb-keyval'; 
 
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
@@ -50,15 +59,15 @@ const CompanyDashboard = ({
   const [companyName] = useState(initialCompanyName);
   const [activeTab, setActiveTab] = useState('inventory');
   
-  // --- Data State (Initialized Empty, Loaded Async) ---
+  // --- Data State ---
   const [snapshots, setSnapshots] = useState([]);
   const [pos, setPos] = useState([]);
   const [settings, setSettings] = useState([]);
   const [vendors, setVendors] = useState([]);
-  const [skuImages, setSkuImages] = useState({}); // Stores ObjectURLs (strings) for display
+  const [skuImages, setSkuImages] = useState({}); 
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  // --- Sales Rate Config State ---
+  // --- Sales Rate Config ---
   const [rateParams, setRateParams] = useState({
     timeframe: 'last-period', 
     customStart: '',
@@ -69,35 +78,25 @@ const CompanyDashboard = ({
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
 
-  // --- 1. Load Data with Migration Logic (LocalStorage -> IndexedDB) ---
+  // --- 1. Load Data with Migration Logic ---
   useEffect(() => {
     async function loadAllData() {
       try {
-        // Helper: Try IDB -> then LocalStorage (Migrate) -> then Fallback
         const load = async (key, fallback) => {
-          // 1. Try IndexedDB
           let val = await get(key);
-          
-          // 2. If empty, try LocalStorage (Migration Step)
           if (!val) {
             const lsVal = localStorage.getItem(key);
             if (lsVal) {
               try {
                 val = JSON.parse(lsVal);
-                // Migrate it to IDB immediately
                 await set(key, val); 
                 console.log(`Migrated ${key} from LocalStorage to IndexedDB`);
-              } catch (e) {
-                console.error(`Error parsing LS key ${key}`, e);
-              }
+              } catch (e) { console.error(e); }
             }
           }
-
-          // 3. If still empty, use fallback
           return val || fallback;
         };
 
-        // Load Tables
         const savedSnaps = await load(`${orgKey}_snapshots`, isTimothy ? TIMOTHY_SNAPSHOTS : LOBO_SNAPSHOTS);
         setSnapshots(savedSnaps);
 
@@ -110,33 +109,23 @@ const CompanyDashboard = ({
         const savedVendors = await load(`${orgKey}_vendors`, isTimothy ? TIMOTHY_VENDORS : LOBO_VENDORS);
         setVendors(savedVendors);
 
-        // Load Images (Special handling for migration)
         let savedImages = await get(`${orgKey}_images`);
-        
-        // Migration for images: Check LocalStorage if IDB is empty
         if (!savedImages) {
           const lsImages = localStorage.getItem(`${orgKey}_images`);
           if (lsImages) {
             try {
               savedImages = JSON.parse(lsImages);
-              // Note: These are legacy Base64 strings. We save them as-is to IDB.
               await set(`${orgKey}_images`, savedImages);
-              console.log(`Migrated images for ${orgKey} from LocalStorage to IndexedDB`);
-            } catch (e) {
-              console.error("Error migrating images", e);
-            }
+            } catch (e) {}
           }
         }
 
-        // Convert stored images (Blobs or Base64) to Object URLs for Display
         if (savedImages && typeof savedImages === 'object') {
           const urlMap = {};
           for (const [sku, blobOrString] of Object.entries(savedImages)) {
             if (blobOrString instanceof Blob) {
-              // New format: Blob -> Object URL
               urlMap[sku] = URL.createObjectURL(blobOrString);
             } else {
-              // Legacy format: Base64 String -> Use as is
               urlMap[sku] = blobOrString;
             }
           }
@@ -148,24 +137,22 @@ const CompanyDashboard = ({
         setDataLoaded(true);
       } catch (err) {
         console.error("Failed to load data", err);
-        // Fallback to prevent white screen
         setDataLoaded(true);
       }
     }
     loadAllData();
   }, [orgKey, isTimothy]);
 
-  // --- 2. Auto-Save to IndexedDB (Immediate for small data) ---
+  // --- 2. Auto-Save to IDB ---
   useEffect(() => {
     if (!dataLoaded) return;
     set(`${orgKey}_snapshots`, snapshots);
     set(`${orgKey}_pos`, pos);
     set(`${orgKey}_settings`, settings);
     set(`${orgKey}_vendors`, vendors);
-    // Note: skuImages are saved individually in handleImageUpload to avoid overhead
   }, [snapshots, pos, settings, vendors, orgKey, dataLoaded]);
 
-  // --- 3. Calculations Hook ---
+  // --- 3. Calculations ---
   const { plannerData, leadTimeStats } = useDashboardMetrics({ 
     snapshots, 
     pos, 
@@ -174,10 +161,7 @@ const CompanyDashboard = ({
   });
 
   // --- 4. Handlers ---
-  
-  // UPDATED: Handle Blob upload
   const handleImageUpload = useCallback(async (sku, blob) => {
-    // 1. Update Display State (Revoke old URL to free memory)
     setSkuImages((prev) => {
       const oldUrl = prev[sku];
       if (oldUrl && oldUrl.startsWith('blob:')) {
@@ -186,7 +170,6 @@ const CompanyDashboard = ({
       return { ...prev, [sku]: URL.createObjectURL(blob) };
     });
 
-    // 2. Save the actual Blob to IndexedDB
     try {
       const currentImages = (await get(`${orgKey}_images`)) || {};
       const updatedImages = { ...currentImages, [sku]: blob };
@@ -256,7 +239,7 @@ const CompanyDashboard = ({
     setVendors((prev) => prev.some(v => v.name === trimmed) ? prev : [...prev, { id: Date.now(), name: trimmed }]);
   };
 
-  // --- Helper to Prepare Full Data for Export/Sync (Converts Blobs to Base64) ---
+  // --- Export/Sync Logic ---
   const prepareExportPayload = async () => {
     const imagesBase64 = {};
     for (const [sku, url] of Object.entries(skuImages)) {
@@ -274,11 +257,10 @@ const CompanyDashboard = ({
       pos, 
       settings, 
       vendors, 
-      skuImages: imagesBase64 // Export as Base64 strings for JSON compatibility
+      skuImages: imagesBase64 
     };
   };
 
-  // --- 5. Export Handlers ---
   const getFileName = (suffix) => `${orgKey === 'timothy' ? 'timothy' : 'lobo'}_${suffix}`;
   
   const handleExportExcelAction = () => exportPlannerExcel(plannerData, getFileName('reorder_planner.xlsx'));
@@ -297,11 +279,9 @@ const CompanyDashboard = ({
     if (data.settings) setSettings(data.settings);
     if (data.vendors) setVendors(data.vendors);
     
-    // Convert Base64 strings back to Blobs for IDB
     if (data.skuImages) {
       const newUrlMap = {};
       const newBlobMap = {};
-      
       for (const [sku, base64] of Object.entries(data.skuImages)) {
         try {
           const res = await fetch(base64);
@@ -312,14 +292,13 @@ const CompanyDashboard = ({
           console.error("Error processing imported image", sku, e);
         }
       }
-      
       setSkuImages(newUrlMap);
       await set(`${orgKey}_images`, newBlobMap);
     }
     alert('Backup imported successfully.');
   };
 
-  // --- 6. Cloud Sync Logic (Debounced + Safety) ---
+  // --- Cloud Sync ---
   const handleLinkCloudFile = async () => {
     if (!window.showSaveFilePicker) return alert('Cloud sync requires Chrome/Edge/Opera.');
     try {
@@ -329,21 +308,16 @@ const CompanyDashboard = ({
     } catch (err) { /* cancelled */ }
   };
 
-  // Debounced Sync Effect with "Close Protection"
   useEffect(() => {
     if (!cloudFileHandle || !dataLoaded) return;
 
-    // 1. Notify user & Prevent Close
     setCloudStatus('Waiting to sync...');
-    
-    // Safety Listener: Prevents closing tab while "Waiting"
     const handleBeforeUnload = (e) => {
       e.preventDefault();
       e.returnValue = 'Data is syncing. Are you sure you want to exit?';
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // 2. Wait 2 seconds after the last change
     const timeoutId = setTimeout(async () => {
       try {
         setCloudStatus('Syncing...');
@@ -351,10 +325,7 @@ const CompanyDashboard = ({
         const writable = await cloudFileHandle.createWritable();
         await writable.write(JSON.stringify(payload, null, 2));
         await writable.close();
-        
         setCloudStatus(`Linked to ${cloudFileHandle.name} · Synced ${new Date().toLocaleTimeString()}`);
-        
-        // 3. Sync Done: Safe to close
         window.removeEventListener('beforeunload', handleBeforeUnload);
       } catch (err) { 
         console.error(err);
@@ -364,12 +335,27 @@ const CompanyDashboard = ({
 
     return () => {
       clearTimeout(timeoutId);
-      // Clean up listener if component unmounts or effect re-runs
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName, dataLoaded]);
 
-  // --- 7. Render ---
+  // --- Prune Handler ---
+  const handlePruneData = (monthsToKeep) => {
+    if (!confirm(`Are you sure you want to delete data older than ${monthsToKeep} months?`)) return;
+
+    const cutoffDate = new Date();
+    cutoffDate.setMonth(cutoffDate.getMonth() - monthsToKeep);
+    const cutoffStr = cutoffDate.toISOString().split('T')[0];
+
+    const newSnapshots = snapshots.filter(s => s.date >= cutoffStr);
+    const newPos = pos.filter(p => !p.received || p.receivedDate >= cutoffStr);
+
+    setSnapshots(newSnapshots);
+    setPos(newPos);
+    alert('Cleanup Complete.');
+  };
+
+  // --- Render ---
   if (!dataLoaded) return <div className="p-10 text-center text-gray-500">Loading database...</div>;
 
   const tabs = [
@@ -417,6 +403,30 @@ const CompanyDashboard = ({
             );
           })}
         </nav>
+
+        {/* --- NEW: Cloud Sync Warning Banner --- */}
+        {!cloudFileHandle && (
+          <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-center gap-3">
+               <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-800/50 text-amber-600 dark:text-amber-400">
+                 <AlertTriangle className="w-5 h-5" />
+               </div>
+               <div className="text-sm">
+                 <p className="font-semibold text-amber-900 dark:text-amber-100">Sync Not Active</p>
+                 <p className="text-amber-700 dark:text-amber-300/80">
+                   Your data is stored locally. Link a file to enable cloud backup.
+                 </p>
+               </div>
+            </div>
+            <button
+              onClick={handleLinkCloudFile}
+              className="whitespace-nowrap px-4 py-2 rounded-lg bg-amber-100 dark:bg-amber-800 hover:bg-amber-200 dark:hover:bg-amber-700 text-sm font-semibold text-amber-900 dark:text-amber-100 transition-colors shadow-sm"
+            >
+              Link File
+            </button>
+          </div>
+        )}
+        {/* -------------------------------------- */}
 
         <main className="mt-4">
           {activeTab === 'planner' && (
@@ -468,6 +478,7 @@ const CompanyDashboard = ({
               onExportLeadTimeReport={handleExportLeadTimeAction}
               snapshots={snapshots}
               pos={pos}
+              onPruneData={handlePruneData}
             />
           )}
         </main>
