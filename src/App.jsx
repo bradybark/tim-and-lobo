@@ -1,10 +1,10 @@
 // src/App.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { Briefcase, Sun, Moon, Package, Lock } from 'lucide-react';
-import { Toaster } from 'sonner'; // Import Toaster
+import { Toaster } from 'sonner'; 
 import CompanyDashboard from './views/CompanyDashboard';
 import { getOrganizationConfig } from './utils/orgConfig';
-import { InventoryProvider } from './context/InventoryContext'; // Import Provider
+import { InventoryProvider } from './context/InventoryContext'; 
 
 // --- Configuration ---
 const APP_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD; 
@@ -23,24 +23,26 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
   const hasColor = Boolean(themeColor);
 
   return (
-    <div className="rounded-3xl bg-slate-900/70 border border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 max-w-sm w-full transition-transform hover:scale-[1.02] duration-300">
-      <div className="w-32 h-20 rounded-2xl border border-dashed border-slate-600/70 flex items-center justify-center mb-6 bg-slate-900/60">
+    // UPDATED: Added h-full to fill the grid height, and shrink-0 to prevent crushing
+    <div className="h-full w-full max-w-sm rounded-3xl bg-slate-900/70 border border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 transition-transform hover:scale-[1.02] duration-300">
+      <div className="shrink-0 w-32 h-20 rounded-2xl border border-dashed border-slate-600/70 flex items-center justify-center mb-6 bg-slate-900/60">
         <Package 
           className="w-7 h-7" 
           style={{ color: hasColor ? themeColor : '#cbd5e1' }} 
         />
       </div>
-      <h2 className="text-lg font-semibold text-slate-50 mb-1 text-center">
+      <h2 className="shrink-0 text-lg font-semibold text-slate-50 mb-1 text-center">
         {name}
       </h2>
-      <p className="text-xs text-slate-400 mb-6 text-center leading-relaxed">
+      {/* UPDATED: flex-grow ensures this element takes up available space, pushing the button down */}
+      <p className="flex-grow text-xs text-slate-400 mb-6 text-center leading-relaxed flex items-center justify-center">
         {description}
       </p>
       <button
         type="button"
         onClick={onClick}
         style={hasColor ? { backgroundColor: themeColor } : {}}
-        className={`inline-flex items-center justify-center gap-2 text-xs font-medium px-5 py-2.5 rounded-xl transition-all duration-200 ${
+        className={`shrink-0 inline-flex items-center justify-center gap-2 text-xs font-medium px-5 py-2.5 rounded-xl transition-all duration-200 ${
           hasColor
             ? 'text-white hover:brightness-110 hover:shadow-lg shadow-md'
             : 'bg-slate-100 text-slate-900 hover:bg-white dark:bg-slate-100 dark:text-slate-900'
@@ -58,7 +60,6 @@ function App() {
   const [selectedOrg, setSelectedOrg] = useState(null); 
   
   // -- Authentication State --
-  // Change this to 'false' if you want to force a lock-out when .env is missing
   const [isAuthenticated, setIsAuthenticated] = useState(!APP_PASSWORD_HASH);
   const [passwordInput, setPasswordInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -89,7 +90,6 @@ function App() {
         setIsAuthenticated(true);
         setErrorMsg('');
       } else {
-        // Fallback for legacy plain-text check (temporary)
         if (passwordInput === APP_PASSWORD_HASH) {
           setIsAuthenticated(true);
           setErrorMsg('');
@@ -185,7 +185,8 @@ function App() {
           Select Organization
         </h1>
 
-        <div className="flex flex-col md:flex-row items-center justify-center gap-8 flex-wrap">
+        {/* UPDATED: Changed from Flex to Grid for consistent sizing */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 justify-items-center">
           {organizations.map((org) => (
             <OrgCard
               key={org.id}
