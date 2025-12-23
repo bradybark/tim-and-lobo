@@ -1,12 +1,11 @@
 // src/hooks/useInventoryData.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import {
   LOBO_SNAPSHOTS, LOBO_POS, LOBO_SETTINGS, LOBO_VENDORS,
   TIMOTHY_SNAPSHOTS, TIMOTHY_POS, TIMOTHY_SETTINGS, TIMOTHY_VENDORS
 } from '../constants/seedData'; 
 
-// Map legacy IDs to their seed data. New IDs will default to empty.
 const LEGACY_SEEDS = {
   lobo: {
     snapshots: LOBO_SNAPSHOTS,
@@ -30,13 +29,12 @@ export function useInventoryData(orgKey) {
   const [pos, setPos] = useState([]);
   const [settings, setSettings] = useState([]);
   const [vendors, setVendors] = useState([]);
-  const [skuImages, setSkuImages] = useState({});
+  const [skuImages, setSkuImages] = useState({}); // Now stores Blobs, not URLs
 
   // 1. Load Data
   useEffect(() => {
     async function loadAllData() {
       try {
-        // Determine seed data for this org (if any)
         const seeds = LEGACY_SEEDS[orgKey] || {
           snapshots: [],
           pos: [],
@@ -44,7 +42,6 @@ export function useInventoryData(orgKey) {
           vendors: []
         };
 
-        // Helper to load from IDB with LocalStorage fallback/migration
         const load = async (key, fallback) => {
           let val = await get(key);
           if (!val) {
@@ -60,42 +57,34 @@ export function useInventoryData(orgKey) {
           return val || fallback;
         };
 
-        const savedSnaps = await load(`${orgKey}_snapshots`, seeds.snapshots);
+        const [savedSnaps, savedPos, savedSettings, savedVendors, savedImages] = await Promise.all([
+          load(`${orgKey}_snapshots`, seeds.snapshots),
+          load(`${orgKey}_pos`, seeds.pos),
+          load(`${orgKey}_settings`, seeds.settings),
+          load(`${orgKey}_vendors`, seeds.vendors),
+          get(`${orgKey}_images`)
+        ]);
+
         setSnapshots(savedSnaps);
-
-        const savedPos = await load(`${orgKey}_pos`, seeds.pos);
         setPos(savedPos);
-
-        const savedSettings = await load(`${orgKey}_settings`, seeds.settings);
         setSettings(savedSettings);
-
-        const savedVendors = await load(`${orgKey}_vendors`, seeds.vendors);
         setVendors(savedVendors);
 
-        // Image Loading Logic
-        let savedImages = await get(`${orgKey}_images`);
-        if (!savedImages) {
-          const lsImages = localStorage.getItem(`${orgKey}_images`);
-          if (lsImages) {
-            try {
-              savedImages = JSON.parse(lsImages);
-              await set(`${orgKey}_images`, savedImages);
-            } catch (e) {}
-          }
-        }
-
+        // Memory Fix: Store raw map, do NOT pre-convert to ObjectURLs
         if (savedImages && typeof savedImages === 'object') {
-          const urlMap = {};
-          for (const [sku, blobOrString] of Object.entries(savedImages)) {
-            if (blobOrString instanceof Blob) {
-              urlMap[sku] = URL.createObjectURL(blobOrString);
-            } else {
-              urlMap[sku] = blobOrString;
-            }
-          }
-          setSkuImages(urlMap);
+            setSkuImages(savedImages);
         } else {
-          setSkuImages({});
+            // Check legacy localstorage for images
+            const lsImages = localStorage.getItem(`${orgKey}_images`);
+            if (lsImages) {
+                try {
+                    const parsed = JSON.parse(lsImages);
+                    setSkuImages(parsed);
+                    await set(`${orgKey}_images`, parsed);
+                } catch (e) {}
+            } else {
+                setSkuImages({});
+            }
         }
 
         setDataLoaded(true);
@@ -107,25 +96,28 @@ export function useInventoryData(orgKey) {
     loadAllData();
   }, [orgKey]);
 
-  // 2. Auto-Save Data 
+  // 2. Auto-Save Data (Debounced)
   useEffect(() => {
     if (!dataLoaded) return;
-    set(`${orgKey}_snapshots`, snapshots);
-    set(`${orgKey}_pos`, pos);
-    set(`${orgKey}_settings`, settings);
-    set(`${orgKey}_vendors`, vendors);
+
+    const handler = setTimeout(() => {
+      set(`${orgKey}_snapshots`, snapshots);
+      set(`${orgKey}_pos`, pos);
+      set(`${orgKey}_settings`, settings);
+      set(`${orgKey}_vendors`, vendors);
+      // Note: Images are saved immediately on upload, not here
+      console.log('Auto-saved data to IDB');
+    }, 1000); // Wait 1s after last change
+
+    return () => clearTimeout(handler);
   }, [snapshots, pos, settings, vendors, orgKey, dataLoaded]);
 
   // 3. Image Upload Handler
   const handleImageUpload = useCallback(async (sku, blob) => {
-    setSkuImages((prev) => {
-      const oldUrl = prev[sku];
-      if (oldUrl && oldUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(oldUrl);
-      }
-      return { ...prev, [sku]: URL.createObjectURL(blob) };
-    });
+    // Update State
+    setSkuImages((prev) => ({ ...prev, [sku]: blob }));
 
+    // Persist immediately
     try {
       const currentImages = (await get(`${orgKey}_images`)) || {};
       const updatedImages = { ...currentImages, [sku]: blob };

@@ -1,6 +1,6 @@
 // src/views/POView.jsx
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, Trash2, XCircle, Check, ChevronDown } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
 import { VendorCell } from '../components/VendorCell';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
@@ -140,7 +140,7 @@ const POView = ({
 
       {/* PO table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto custom-scroll">
+        <div className="overflow-x-auto custom-scroll pb-4">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
@@ -265,6 +265,18 @@ const POView = ({
                     </tr>
                   );
                 })}
+
+                {/* --- ADDED BLANK STATE ROW --- */}
+                {processedData.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={10}
+                      className="px-6 py-8 text-center text-gray-500 dark:text-gray-400"
+                    >
+                      No purchase orders found. Create a new PO to get started.
+                    </td>
+                  </tr>
+                )}
             </tbody>
           </table>
         </div>

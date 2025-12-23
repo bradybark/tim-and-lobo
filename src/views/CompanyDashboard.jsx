@@ -1,16 +1,8 @@
 // src/views/CompanyDashboard.jsx
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
-  Package, 
-  ClipboardList, 
-  Truck, 
-  Sun, 
-  Moon, 
-  ArrowLeft, 
-  Settings as SettingsIcon,
-  AlertTriangle 
+  Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle 
 } from 'lucide-react';
-import { set } from 'idb-keyval'; 
 
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
@@ -18,10 +10,9 @@ import POView from './POView';
 import VendorManagerView from './VendorManagerView';
 import SettingsView from './SettingsView';
 
-import { getDaysDiff } from '../utils/date';
+// UPDATED imports
+import { useInventory } from '../context/InventoryContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
-import { useInventoryData } from '../hooks/useInventoryData';
-
 import {
   exportPlannerExcel,
   exportFullWorkbook,
@@ -29,7 +20,6 @@ import {
   exportJsonBackup
 } from '../utils/export';
 
-// --- Helper: Convert Object URL (or Blob) back to Base64 for JSON Export ---
 const urlToBase64 = async (url) => {
   try {
     const response = await fetch(url);
@@ -48,7 +38,7 @@ const urlToBase64 = async (url) => {
 
 const CompanyDashboard = ({
   orgKey = 'lobo',
-  initialCompanyName = 'Lobo Tool Company',
+  initialCompanyName,
   isDarkMode,
   onToggleTheme,
   onBack,
@@ -56,7 +46,7 @@ const CompanyDashboard = ({
   const [companyName] = useState(initialCompanyName);
   const [activeTab, setActiveTab] = useState('inventory');
   
-  // --- Data State via Custom Hook ---
+  // --- Consume Context ---
   const {
     dataLoaded,
     snapshots, setSnapshots,
@@ -65,7 +55,7 @@ const CompanyDashboard = ({
     vendors, setVendors,
     skuImages, setSkuImages,
     handleImageUpload
-  } = useInventoryData(orgKey);
+  } = useInventory();
 
   // --- Sales Rate Config ---
   const [rateParams, setRateParams] = useState({
@@ -74,7 +64,6 @@ const CompanyDashboard = ({
     customEnd: ''
   });
 
-  // --- Cloud Sync State ---
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
   const isSyncing = useRef(false);
@@ -87,7 +76,7 @@ const CompanyDashboard = ({
     rateParams 
   });
 
-  // --- Handlers ---
+  // --- Legacy Handlers (kept for POView/PlannerView compatibility) ---
   const updateSkuSetting = useCallback((sku, field, value) => {
     const val = Number.isNaN(Number(value)) ? 0 : Number(value);
     setSettings((prev) => {
@@ -97,22 +86,6 @@ const CompanyDashboard = ({
     });
   }, [setSettings]);
 
-  const handleAddSnapshot = (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const sku = formData.get('sku').trim();
-    if (!sku) return;
-    setSnapshots((prev) => [...prev, {
-      id: Date.now(),
-      date: formData.get('date'),
-      sku,
-      qty: Number(formData.get('qty')) || 0
-    }]);
-    e.target.reset();
-  };
-
-  const deleteSnapshot = (id) => setSnapshots((prev) => prev.filter((s) => s.id !== id));
-
   const handleAddPO = (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
@@ -121,14 +94,9 @@ const CompanyDashboard = ({
     if (!poNumber || !sku) return;
     setPos((prev) => [...prev, {
       id: Date.now(),
-      poNumber,
-      sku,
-      orderDate: formData.get('orderDate'),
+      poNumber, sku, orderDate: formData.get('orderDate'),
       qty: Number(formData.get('qty')) || 0,
-      eta: formData.get('eta'),
-      received: false,
-      receivedDate: '',
-      vendor: ''
+      eta: formData.get('eta'), received: false, receivedDate: '', vendor: ''
     }]);
     e.target.reset();
   };
@@ -141,7 +109,6 @@ const CompanyDashboard = ({
   const updateReceivedDate = (id, date) => setPos((prev) => prev.map((p) => p.id === id ? { ...p, receivedDate: date } : p));
   const deletePO = (id) => setPos((prev) => prev.filter((p) => p.id !== id));
   const updatePOVendor = (id, v) => setPos((prev) => prev.map((p) => p.id === id ? { ...p, vendor: v } : p));
-
   const addVendor = (name) => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -151,22 +118,18 @@ const CompanyDashboard = ({
   // --- Export/Sync Logic ---
   const prepareExportPayload = async () => {
     const imagesBase64 = {};
-    for (const [sku, url] of Object.entries(skuImages)) {
-      if (url) {
-        imagesBase64[sku] = await urlToBase64(url);
+    for (const [sku, blob] of Object.entries(skuImages)) {
+      if (blob) {
+         // Create a temp URL to fetch it if it's a blob, or use directly if string
+         const url = blob instanceof Blob ? URL.createObjectURL(blob) : blob;
+         imagesBase64[sku] = await urlToBase64(url);
+         if (blob instanceof Blob) URL.revokeObjectURL(url);
       }
     }
 
     return { 
-      version: 1, 
-      orgKey, 
-      companyName, 
-      exportedAt: new Date().toISOString(), 
-      snapshots, 
-      pos, 
-      settings, 
-      vendors, 
-      skuImages: imagesBase64 
+      version: 1, orgKey, companyName, exportedAt: new Date().toISOString(), 
+      snapshots, pos, settings, vendors, skuImages: imagesBase64 
     };
   };
 
@@ -189,25 +152,11 @@ const CompanyDashboard = ({
     if (data.vendors) setVendors(data.vendors);
     
     if (data.skuImages) {
-      const newUrlMap = {};
-      const newBlobMap = {};
-      for (const [sku, base64] of Object.entries(data.skuImages)) {
-        try {
-          const res = await fetch(base64);
-          const blob = await res.blob();
-          newBlobMap[sku] = blob;
-          newUrlMap[sku] = URL.createObjectURL(blob);
-        } catch (e) {
-          console.error("Error processing imported image", sku, e);
-        }
-      }
-      setSkuImages(newUrlMap);
-      await set(`${orgKey}_images`, newBlobMap);
+      setSkuImages(data.skuImages); 
     }
     alert('Backup imported successfully.');
   };
 
-  // --- Cloud Sync ---
   const handleLinkCloudFile = async () => {
     if (!window.showSaveFilePicker) return alert('Cloud sync requires Chrome/Edge/Opera.');
     try {
@@ -217,15 +166,12 @@ const CompanyDashboard = ({
     } catch (err) { /* cancelled */ }
   };
 
-  // ROBUST SYNC EFFECT
   useEffect(() => {
     if (!cloudFileHandle || !dataLoaded) return;
-
     const syncData = async () => {
       if (isSyncing.current) return;
       isSyncing.current = true;
       setCloudStatus('Syncing...');
-
       try {
         const payload = await prepareExportPayload();
         const writable = await cloudFileHandle.createWritable();
@@ -239,41 +185,24 @@ const CompanyDashboard = ({
         isSyncing.current = false;
       }
     };
-
-    // Debounce 2 seconds
     const timer = setTimeout(syncData, 2000);
-
-    const handleBeforeUnload = (e) => {
-       if (isSyncing.current) {
-          e.preventDefault();
-          e.returnValue = 'Data is currently syncing. Please wait.';
-       }
-    };
+    const handleBeforeUnload = (e) => { if (isSyncing.current) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
+    return () => { clearTimeout(timer); window.removeEventListener('beforeunload', handleBeforeUnload); };
   }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName, dataLoaded]);
 
-  // --- Prune Handler ---
   const handlePruneData = (monthsToKeep) => {
     if (!confirm(`Are you sure you want to delete data older than ${monthsToKeep} months?`)) return;
-
     const cutoffDate = new Date();
     cutoffDate.setMonth(cutoffDate.getMonth() - monthsToKeep);
     const cutoffStr = cutoffDate.toISOString().split('T')[0];
-
     const newSnapshots = snapshots.filter(s => s.date >= cutoffStr);
     const newPos = pos.filter(p => !p.received || p.receivedDate >= cutoffStr);
-
     setSnapshots(newSnapshots);
     setPos(newPos);
     alert('Cleanup Complete.');
   };
 
-  // --- Render ---
   if (!dataLoaded) return <div className="p-10 text-center text-gray-500">Loading database...</div>;
 
   const tabs = [
@@ -285,7 +214,6 @@ const CompanyDashboard = ({
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      {/* UPDATED: Changed 'max-w-7xl' to 'w-full' to allow full width */}
       <div className="w-full mx-auto px-6 py-6 space-y-6">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
@@ -324,22 +252,17 @@ const CompanyDashboard = ({
         </nav>
 
         {!cloudFileHandle && (
-          <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-in">
+          <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
                <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-800/50 text-amber-600 dark:text-amber-400">
                  <AlertTriangle className="w-5 h-5" />
                </div>
                <div className="text-sm">
                  <p className="font-semibold text-amber-900 dark:text-amber-100">Sync Not Active</p>
-                 <p className="text-amber-700 dark:text-amber-300/80">
-                   Your data is stored locally. Link a file to enable cloud backup.
-                 </p>
+                 <p className="text-amber-700 dark:text-amber-300/80">Your data is stored locally. Link a file to enable cloud backup.</p>
                </div>
             </div>
-            <button
-              onClick={handleLinkCloudFile}
-              className="whitespace-nowrap px-4 py-2 rounded-lg bg-amber-100 dark:bg-amber-800 hover:bg-amber-200 dark:hover:bg-amber-700 text-sm font-semibold text-amber-900 dark:text-amber-100 transition-colors shadow-sm"
-            >
+            <button onClick={handleLinkCloudFile} className="whitespace-nowrap px-4 py-2 rounded-lg bg-amber-100 dark:bg-amber-800 hover:bg-amber-200 dark:hover:bg-amber-700 text-sm font-semibold text-amber-900 dark:text-amber-100 transition-colors shadow-sm">
               Link File
             </button>
           </div>
@@ -359,14 +282,7 @@ const CompanyDashboard = ({
             />
           )}
           {activeTab === 'inventory' && (
-            <InventoryLogView
-              snapshots={snapshots}
-              handleAddSnapshot={handleAddSnapshot}
-              deleteSnapshot={deleteSnapshot}
-              skuImages={skuImages}
-              pos={pos}
-              getDaysDiff={getDaysDiff}
-            />
+            <InventoryLogView />
           )}
           {activeTab === 'pos' && (
             <POView

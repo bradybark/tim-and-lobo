@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
+import { getDaysDiff } from '../utils/date'; 
 
 const formatDate = (dateLike) => {
   if (!dateLike) return '-';
@@ -16,15 +17,16 @@ const formatDate = (dateLike) => {
 };
 
 const InventoryLogView = ({
-  snapshots,
+  snapshots = [],
   handleAddSnapshot,
   deleteSnapshot,
-  skuImages,
-  pos,
-  getDaysDiff,
+  skuImages = {},
+  pos = [],
 }) => {
   // Compute period metrics per snapshot
   const processedLog = useMemo(() => {
+    if (!snapshots || snapshots.length === 0) return [];
+
     const snapshotsBySku = {};
     snapshots.forEach((s) => {
       if (!snapshotsBySku[s.sku]) snapshotsBySku[s.sku] = [];
@@ -61,6 +63,7 @@ const InventoryLogView = ({
             .reduce((sum, p) => sum + parseInt(p.qty, 10), 0);
 
           daysInPeriod = getDaysDiff(prevDate, snap.date);
+          
           unitsSold = prevQty + purchases - snap.qty;
           dailyRate = daysInPeriod > 0 ? (unitsSold / daysInPeriod).toFixed(2) : 0;
         }
@@ -78,7 +81,7 @@ const InventoryLogView = ({
     });
 
     return allRows;
-  }, [snapshots, pos, getDaysDiff]);
+  }, [snapshots, pos]);
 
   const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(processedLog, { key: 'date', direction: 'desc' });
 
@@ -141,11 +144,19 @@ const InventoryLogView = ({
 
       {/* Log table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div className="overflow-x-auto custom-scroll">
+        <div className="overflow-x-auto custom-scroll pb-4">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <SortableHeaderCell label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.date} />
+                {/* REMOVED STICKY CLASSES */}
+                <SortableHeaderCell 
+                  label="Date" 
+                  sortKey="date" 
+                  currentSort={sortConfig} 
+                  onSort={handleSort} 
+                  onFilter={handleFilter} 
+                  filterValue={filters.date} 
+                />
                 <SortableHeaderCell label="Product" sortKey="sku" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.sku} />
                 <SortableHeaderCell label="Ending Inv" sortKey="qty" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.qty} className="text-right" tooltip="Counted quantity on this date" />
                 <SortableHeaderCell label="Purchases" sortKey="purchases" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.purchases} className="text-right" tooltip="Stock received since previous count" />
@@ -166,6 +177,7 @@ const InventoryLogView = ({
                   key={s.id}
                   className="hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
+                  {/* REMOVED STICKY CLASSES */}
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
                     {formatDate(s.date)}
                   </td>

@@ -1,8 +1,10 @@
 // src/App.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { Briefcase, Sun, Moon, Package, Lock } from 'lucide-react';
+import { Toaster } from 'sonner'; // Import Toaster
 import CompanyDashboard from './views/CompanyDashboard';
 import { getOrganizationConfig } from './utils/orgConfig';
+import { InventoryProvider } from './context/InventoryContext'; // Import Provider
 
 // --- Configuration ---
 const APP_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD; 
@@ -18,8 +20,6 @@ async function sha256(message) {
 }
 
 const OrgCard = ({ name, description, themeColor, onClick }) => {
-  // If a specific theme color is provided, we use it.
-  // Otherwise, we fall back to the default "secondary" slate/gray style.
   const hasColor = Boolean(themeColor);
 
   return (
@@ -39,7 +39,6 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
       <button
         type="button"
         onClick={onClick}
-        // Apply the dynamic color directly to the background
         style={hasColor ? { backgroundColor: themeColor } : {}}
         className={`inline-flex items-center justify-center gap-2 text-xs font-medium px-5 py-2.5 rounded-xl transition-all duration-200 ${
           hasColor
@@ -59,6 +58,7 @@ function App() {
   const [selectedOrg, setSelectedOrg] = useState(null); 
   
   // -- Authentication State --
+  // Change this to 'false' if you want to force a lock-out when .env is missing
   const [isAuthenticated, setIsAuthenticated] = useState(!APP_PASSWORD_HASH);
   const [passwordInput, setPasswordInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -157,13 +157,16 @@ function App() {
 
   if (selectedOrg) {
     return (
-      <CompanyDashboard
-        orgKey={selectedOrg.id}
-        initialCompanyName={selectedOrg.name}
-        isDarkMode={isDarkMode}
-        onToggleTheme={toggleTheme}
-        onBack={() => setSelectedOrg(null)}
-      />
+      <InventoryProvider orgKey={selectedOrg.id}>
+        <Toaster position="top-center" richColors />
+        <CompanyDashboard
+          initialCompanyName={selectedOrg.name}
+          orgKey={selectedOrg.id}
+          isDarkMode={isDarkMode}
+          onToggleTheme={toggleTheme}
+          onBack={() => setSelectedOrg(null)}
+        />
+      </InventoryProvider>
     );
   }
 
