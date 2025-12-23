@@ -1,8 +1,19 @@
-# Tim & Lobo Inventory Manager
+<div align="center">
 
-A modern, local-first inventory management dashboard.
+# 📦 Tim & Lobo Inventory Manager
 
-This application is designed to be **offline-first**, storing all data locally in the browser's IndexedDB while offering "Cloud Sync" capabilities via the File System Access API.
+**A modern, local-first inventory management dashboard.**
+
+[![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![IndexedDB](https://img.shields.io/badge/IndexedDB-Local_First-success?style=for-the-badge)](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)
+
+<p align="center">
+  Designed to be <strong>offline-first</strong>. <br>
+  Stores all data locally in the browser's IndexedDB while offering "Cloud Sync" capabilities via the File System Access API.
+</p>
+</div>
 
 ## 🚀 Key Features
 
