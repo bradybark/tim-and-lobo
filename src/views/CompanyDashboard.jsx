@@ -10,7 +10,7 @@ import {
   Settings as SettingsIcon,
   AlertTriangle 
 } from 'lucide-react';
-import { set } from 'idb-keyval'; // Only needed for image import fallback if any
+import { set } from 'idb-keyval'; 
 
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
@@ -20,7 +20,7 @@ import SettingsView from './SettingsView';
 
 import { getDaysDiff } from '../utils/date';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
-import { useInventoryData } from '../hooks/useInventoryData'; // NEW HOOK
+import { useInventoryData } from '../hooks/useInventoryData';
 
 import {
   exportPlannerExcel,
@@ -285,7 +285,8 @@ const CompanyDashboard = ({
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+      {/* UPDATED: Changed 'max-w-7xl' to 'w-full' to allow full width */}
+      <div className="w-full mx-auto px-6 py-6 space-y-6">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             {onBack && (
