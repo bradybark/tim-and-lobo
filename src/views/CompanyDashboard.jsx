@@ -1,7 +1,7 @@
 // src/views/CompanyDashboard.jsx
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
-  Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle 
+  Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle, BarChart3
 } from 'lucide-react';
 import { toast } from 'sonner'; 
 
@@ -10,6 +10,7 @@ import InventoryLogView from './InventoryLogView';
 import POView from './POView';
 import VendorManagerView from './VendorManagerView';
 import SettingsView from './SettingsView';
+import ReportsView from './ReportsView';
 
 import { useInventory } from '../context/InventoryContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
@@ -262,6 +263,7 @@ const CompanyDashboard = ({
     { id: 'inventory', label: 'Inventory Log', icon: Package },
     { id: 'pos', label: 'Purchase Orders', icon: Truck },
     { id: 'planner', label: 'Reorder Planner', icon: ClipboardList },
+    { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
 
@@ -353,6 +355,14 @@ const CompanyDashboard = ({
           {activeTab === 'vendors' && (
             <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />
           )}
+          {activeTab === 'reports' && (
+            <ReportsView
+              leadTimeStats={leadTimeStats}
+              onExportLeadTimeReport={handleExportLeadTimeAction}
+              snapshots={snapshots}
+              pos={pos}
+            />
+          )}
           {activeTab === 'settings' && (
             <SettingsView
               onOpenVendors={() => setActiveTab('vendors')}
@@ -360,10 +370,6 @@ const CompanyDashboard = ({
               onExportBackup={onManualExportBackup} // Use wrapper here
               onImportBackup={handleImportBackup}
               cloudStatus={cloudStatus}
-              leadTimeStats={leadTimeStats}
-              onExportLeadTimeReport={handleExportLeadTimeAction}
-              snapshots={snapshots}
-              pos={pos}
               onPruneData={handlePruneData}
             />
           )}
