@@ -4,9 +4,19 @@ import { Briefcase, Sun, Moon, Package, Lock } from 'lucide-react';
 import CompanyDashboard from './views/CompanyDashboard';
 
 // --- Configuration ---
-// access the variable from the .env file
-const APP_PASSWORD = import.meta.env.VITE_APP_PASSWORD; 
+// ACCESS THE VARIABLE FROM THE .env FILE
+// IMPORTANT: To be secure, VITE_APP_PASSWORD should be the SHA-256 Hash of your password, not the plain text password.
+const APP_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD; 
 // ---------------------
+
+// Helper: SHA-256 Hashing
+async function sha256(message) {
+  if (!message) return '';
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 const OrgCard = ({ name, description, primary, onClick }) => {
   return (
@@ -40,7 +50,8 @@ function App() {
   const [selectedOrg, setSelectedOrg] = useState(null); // 'lobo' | 'timothy' | null
   
   // -- Authentication State --
-  const [isAuthenticated, setIsAuthenticated] = useState(!APP_PASSWORD);
+  // If no password env is set, we skip auth (dev mode)
+  const [isAuthenticated, setIsAuthenticated] = useState(!APP_PASSWORD_HASH);
   const [passwordInput, setPasswordInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -62,15 +73,30 @@ function App() {
 
   const toggleTheme = () => setIsDarkMode((prev) => !prev);
 
-  // Handle Login Logic
-  const handleLogin = (e) => {
+  // Handle Login Logic with Hashing
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (passwordInput === APP_PASSWORD) {
-      setIsAuthenticated(true);
-      setErrorMsg('');
-    } else {
-      setErrorMsg('Incorrect password');
-      setPasswordInput('');
+    try {
+      const inputHash = await sha256(passwordInput);
+      
+      // Compare the hash of input vs stored hash
+      if (inputHash === APP_PASSWORD_HASH) {
+        setIsAuthenticated(true);
+        setErrorMsg('');
+      } else {
+        // Fallback for legacy plain-text (remove this after you update your .env)
+        if (passwordInput === APP_PASSWORD_HASH) {
+          setIsAuthenticated(true);
+          setErrorMsg('');
+          alert("Warning: Your .env password is in plain text. Please update it to a SHA-256 hash.");
+        } else {
+          setErrorMsg('Incorrect password');
+          setPasswordInput('');
+        }
+      }
+    } catch (error) {
+      console.error("Hashing error", error);
+      setErrorMsg('Authentication Error');
     }
   };
 

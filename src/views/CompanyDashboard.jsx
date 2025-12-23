@@ -1,5 +1,5 @@
 // src/views/CompanyDashboard.jsx
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
   Package, 
   ClipboardList, 
@@ -8,9 +8,9 @@ import {
   Moon, 
   ArrowLeft, 
   Settings as SettingsIcon,
-  AlertTriangle // <--- Added Icon
+  AlertTriangle 
 } from 'lucide-react';
-import { get, set } from 'idb-keyval'; 
+import { set } from 'idb-keyval'; // Only needed for image import fallback if any
 
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
@@ -20,16 +20,14 @@ import SettingsView from './SettingsView';
 
 import { getDaysDiff } from '../utils/date';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
+import { useInventoryData } from '../hooks/useInventoryData'; // NEW HOOK
+
 import {
   exportPlannerExcel,
   exportFullWorkbook,
   exportLeadTimeReport,
   exportJsonBackup
 } from '../utils/export';
-import {
-  LOBO_SNAPSHOTS, LOBO_POS, LOBO_SETTINGS, LOBO_VENDORS,
-  TIMOTHY_SNAPSHOTS, TIMOTHY_POS, TIMOTHY_SETTINGS, TIMOTHY_VENDORS
-} from '../constants/seedData';
 
 // --- Helper: Convert Object URL (or Blob) back to Base64 for JSON Export ---
 const urlToBase64 = async (url) => {
@@ -55,17 +53,19 @@ const CompanyDashboard = ({
   onToggleTheme,
   onBack,
 }) => {
-  const isTimothy = orgKey === 'timothy';
   const [companyName] = useState(initialCompanyName);
   const [activeTab, setActiveTab] = useState('inventory');
   
-  // --- Data State ---
-  const [snapshots, setSnapshots] = useState([]);
-  const [pos, setPos] = useState([]);
-  const [settings, setSettings] = useState([]);
-  const [vendors, setVendors] = useState([]);
-  const [skuImages, setSkuImages] = useState({}); 
-  const [dataLoaded, setDataLoaded] = useState(false);
+  // --- Data State via Custom Hook ---
+  const {
+    dataLoaded,
+    snapshots, setSnapshots,
+    pos, setPos,
+    settings, setSettings,
+    vendors, setVendors,
+    skuImages, setSkuImages,
+    handleImageUpload
+  } = useInventoryData(orgKey);
 
   // --- Sales Rate Config ---
   const [rateParams, setRateParams] = useState({
@@ -74,85 +74,12 @@ const CompanyDashboard = ({
     customEnd: ''
   });
 
-  // Cloud Sync State
+  // --- Cloud Sync State ---
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
+  const isSyncing = useRef(false);
 
-  // --- 1. Load Data with Migration Logic ---
-  useEffect(() => {
-    async function loadAllData() {
-      try {
-        const load = async (key, fallback) => {
-          let val = await get(key);
-          if (!val) {
-            const lsVal = localStorage.getItem(key);
-            if (lsVal) {
-              try {
-                val = JSON.parse(lsVal);
-                await set(key, val); 
-                console.log(`Migrated ${key} from LocalStorage to IndexedDB`);
-              } catch (e) { console.error(e); }
-            }
-          }
-          return val || fallback;
-        };
-
-        const savedSnaps = await load(`${orgKey}_snapshots`, isTimothy ? TIMOTHY_SNAPSHOTS : LOBO_SNAPSHOTS);
-        setSnapshots(savedSnaps);
-
-        const savedPos = await load(`${orgKey}_pos`, isTimothy ? TIMOTHY_POS : LOBO_POS);
-        setPos(savedPos);
-
-        const savedSettings = await load(`${orgKey}_settings`, isTimothy ? TIMOTHY_SETTINGS : LOBO_SETTINGS);
-        setSettings(savedSettings);
-
-        const savedVendors = await load(`${orgKey}_vendors`, isTimothy ? TIMOTHY_VENDORS : LOBO_VENDORS);
-        setVendors(savedVendors);
-
-        let savedImages = await get(`${orgKey}_images`);
-        if (!savedImages) {
-          const lsImages = localStorage.getItem(`${orgKey}_images`);
-          if (lsImages) {
-            try {
-              savedImages = JSON.parse(lsImages);
-              await set(`${orgKey}_images`, savedImages);
-            } catch (e) {}
-          }
-        }
-
-        if (savedImages && typeof savedImages === 'object') {
-          const urlMap = {};
-          for (const [sku, blobOrString] of Object.entries(savedImages)) {
-            if (blobOrString instanceof Blob) {
-              urlMap[sku] = URL.createObjectURL(blobOrString);
-            } else {
-              urlMap[sku] = blobOrString;
-            }
-          }
-          setSkuImages(urlMap);
-        } else {
-          setSkuImages({});
-        }
-
-        setDataLoaded(true);
-      } catch (err) {
-        console.error("Failed to load data", err);
-        setDataLoaded(true);
-      }
-    }
-    loadAllData();
-  }, [orgKey, isTimothy]);
-
-  // --- 2. Auto-Save to IDB ---
-  useEffect(() => {
-    if (!dataLoaded) return;
-    set(`${orgKey}_snapshots`, snapshots);
-    set(`${orgKey}_pos`, pos);
-    set(`${orgKey}_settings`, settings);
-    set(`${orgKey}_vendors`, vendors);
-  }, [snapshots, pos, settings, vendors, orgKey, dataLoaded]);
-
-  // --- 3. Calculations ---
+  // --- Metrics ---
   const { plannerData, leadTimeStats } = useDashboardMetrics({ 
     snapshots, 
     pos, 
@@ -160,25 +87,7 @@ const CompanyDashboard = ({
     rateParams 
   });
 
-  // --- 4. Handlers ---
-  const handleImageUpload = useCallback(async (sku, blob) => {
-    setSkuImages((prev) => {
-      const oldUrl = prev[sku];
-      if (oldUrl && oldUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(oldUrl);
-      }
-      return { ...prev, [sku]: URL.createObjectURL(blob) };
-    });
-
-    try {
-      const currentImages = (await get(`${orgKey}_images`)) || {};
-      const updatedImages = { ...currentImages, [sku]: blob };
-      await set(`${orgKey}_images`, updatedImages);
-    } catch (err) {
-      console.error("Failed to save image to IDB", err);
-    }
-  }, [orgKey]);
-
+  // --- Handlers ---
   const updateSkuSetting = useCallback((sku, field, value) => {
     const val = Number.isNaN(Number(value)) ? 0 : Number(value);
     setSettings((prev) => {
@@ -186,7 +95,7 @@ const CompanyDashboard = ({
       if (!exists) return [...prev, { sku, leadTime: 90, minDays: 60, targetMonths: 6, [field]: val }];
       return prev.map((s) => (s.sku === sku ? { ...s, [field]: val } : s));
     });
-  }, []);
+  }, [setSettings]);
 
   const handleAddSnapshot = (e) => {
     e.preventDefault();
@@ -308,33 +217,42 @@ const CompanyDashboard = ({
     } catch (err) { /* cancelled */ }
   };
 
+  // ROBUST SYNC EFFECT
   useEffect(() => {
     if (!cloudFileHandle || !dataLoaded) return;
 
-    setCloudStatus('Waiting to sync...');
-    const handleBeforeUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = 'Data is syncing. Are you sure you want to exit?';
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    const syncData = async () => {
+      if (isSyncing.current) return;
+      isSyncing.current = true;
+      setCloudStatus('Syncing...');
 
-    const timeoutId = setTimeout(async () => {
       try {
-        setCloudStatus('Syncing...');
         const payload = await prepareExportPayload();
         const writable = await cloudFileHandle.createWritable();
         await writable.write(JSON.stringify(payload, null, 2));
         await writable.close();
         setCloudStatus(`Linked to ${cloudFileHandle.name} · Synced ${new Date().toLocaleTimeString()}`);
-        window.removeEventListener('beforeunload', handleBeforeUnload);
-      } catch (err) { 
-        console.error(err);
-        setCloudStatus('Sync error'); 
+      } catch (err) {
+        console.error("Sync failed", err);
+        setCloudStatus('Sync error - Retry?');
+      } finally {
+        isSyncing.current = false;
       }
-    }, 2000);
+    };
+
+    // Debounce 2 seconds
+    const timer = setTimeout(syncData, 2000);
+
+    const handleBeforeUnload = (e) => {
+       if (isSyncing.current) {
+          e.preventDefault();
+          e.returnValue = 'Data is currently syncing. Please wait.';
+       }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
-      clearTimeout(timeoutId);
+      clearTimeout(timer);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName, dataLoaded]);
@@ -404,7 +322,6 @@ const CompanyDashboard = ({
           })}
         </nav>
 
-        {/* --- NEW: Cloud Sync Warning Banner --- */}
         {!cloudFileHandle && (
           <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-in">
             <div className="flex items-center gap-3">
@@ -426,7 +343,6 @@ const CompanyDashboard = ({
             </button>
           </div>
         )}
-        {/* -------------------------------------- */}
 
         <main className="mt-4">
           {activeTab === 'planner' && (
