@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { Briefcase, Sun, Moon, Package, Lock } from 'lucide-react';
-import { Toaster } from 'sonner'; 
+import { Toaster, toast } from 'sonner'; // Updated imports
 import CompanyDashboard from './views/CompanyDashboard';
 import { getOrganizationConfig } from './utils/orgConfig';
 import { InventoryProvider } from './context/InventoryContext'; 
@@ -23,7 +23,6 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
   const hasColor = Boolean(themeColor);
 
   return (
-    // UPDATED: Added h-full to fill the grid height, and shrink-0 to prevent crushing
     <div className="h-full w-full max-w-sm rounded-3xl bg-slate-900/70 border border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 transition-transform hover:scale-[1.02] duration-300">
       <div className="shrink-0 w-32 h-20 rounded-2xl border border-dashed border-slate-600/70 flex items-center justify-center mb-6 bg-slate-900/60">
         <Package 
@@ -34,7 +33,6 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
       <h2 className="shrink-0 text-lg font-semibold text-slate-50 mb-1 text-center">
         {name}
       </h2>
-      {/* UPDATED: flex-grow ensures this element takes up available space, pushing the button down */}
       <p className="flex-grow text-xs text-slate-400 mb-6 text-center leading-relaxed flex items-center justify-center">
         {description}
       </p>
@@ -89,25 +87,35 @@ function App() {
       if (inputHash === APP_PASSWORD_HASH) {
         setIsAuthenticated(true);
         setErrorMsg('');
+        toast.success('Access granted');
       } else {
         if (passwordInput === APP_PASSWORD_HASH) {
           setIsAuthenticated(true);
           setErrorMsg('');
-          alert("Warning: Update your .env password to a SHA-256 hash.");
+          // FIXED: Replaced blocking alert with non-blocking warning toast
+          toast.warning("Security Warning: Update your .env password to a SHA-256 hash.", {
+            duration: 6000,
+          });
         } else {
           setErrorMsg('Incorrect password');
+          toast.error('Incorrect password');
           setPasswordInput('');
         }
       }
     } catch (error) {
       console.error("Hashing error", error);
       setErrorMsg('Authentication Error');
+      toast.error('Authentication Error');
     }
   };
 
+  // --- LOGIN SCREEN ---
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
+        {/* ADDED: Toaster must be rendered here to show login errors/warnings */}
+        <Toaster position="top-center" richColors />
+        
         <button
           type="button"
           onClick={toggleTheme}
@@ -155,9 +163,11 @@ function App() {
     );
   }
 
+  // --- DASHBOARD SCREEN ---
   if (selectedOrg) {
     return (
       <InventoryProvider orgKey={selectedOrg.id}>
+        {/* Kept Toaster here for Dashboard views */}
         <Toaster position="top-center" richColors />
         <CompanyDashboard
           initialCompanyName={selectedOrg.name}
@@ -170,8 +180,12 @@ function App() {
     );
   }
 
+  // --- ORG SELECTION SCREEN ---
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
+      {/* ADDED: Toaster must be rendered here as well */}
+      <Toaster position="top-center" richColors />
+
       <button
         type="button"
         onClick={toggleTheme}
@@ -185,7 +199,6 @@ function App() {
           Select Organization
         </h1>
 
-        {/* UPDATED: Changed from Flex to Grid for consistent sizing */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 justify-items-center">
           {organizations.map((org) => (
             <OrgCard

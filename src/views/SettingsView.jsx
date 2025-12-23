@@ -7,7 +7,9 @@ import {
   ChevronDown,
   ChevronUp,
   Users,
+  Trash2, 
 } from 'lucide-react';
+import { toast } from 'sonner'; // <--- IMPORT SONNER
 import { SalesTrendReport } from '../components/SalesTrendReport';
 
 const SettingsView = ({
@@ -20,9 +22,13 @@ const SettingsView = ({
   onExportLeadTimeReport,
   snapshots,
   pos,
+  onPruneData, 
 }) => {
   const fileInputRef = useRef(null);
-  const [isLeadTimeOpen, setIsLeadTimeOpen] = useState(false); // collapsed by default
+  const [isLeadTimeOpen, setIsLeadTimeOpen] = useState(false); 
+  
+  // State to track user selection for pruning
+  const [pruneMonths, setPruneMonths] = useState(12);
 
   const handleImportClick = () => {
     if (!onImportBackup) return;
@@ -42,9 +48,8 @@ const SettingsView = ({
         onImportBackup(json);
       } catch (err) {
         console.error('Failed to parse backup file', err);
-        alert(
-          'Failed to read backup file. Please make sure it is a valid JSON export.'
-        );
+        // UPDATED: Used toast.error instead of alert
+        toast.error('Failed to read backup file. Please make sure it is a valid JSON export.');
       }
     };
     reader.readAsText(file);
@@ -58,28 +63,22 @@ const SettingsView = ({
     return `${value.toFixed(1)} Days`;
   };
 
-  // Treat variance <= 0 as "On Avg Early"
   const getStatusInfo = (variance) => {
     if (variance == null || Number.isNaN(variance)) {
       return {
         label: 'No Data',
-        className:
-          'bg-gray-700/60 text-gray-100 border border-gray-600/60',
+        className: 'bg-gray-700/60 text-gray-100 border border-gray-600/60',
       };
     }
-
     if (variance <= 0) {
       return {
         label: 'On Avg Early',
-        className:
-          'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40',
+        className: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/40',
       };
     }
-
     return {
       label: 'On Avg Late',
-      className:
-        'bg-amber-500/10 text-amber-400 border border-amber-500/40',
+      className: 'bg-amber-500/10 text-amber-400 border border-amber-500/40',
     };
   };
 
@@ -192,6 +191,46 @@ const SettingsView = ({
           </div>
         </section>
       </div>
+
+      {/* Data Maintenance Section */}
+      <section className="rounded-2xl border border-red-900/30 bg-red-950/10 px-6 py-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-900/20 text-red-400">
+              <Trash2 className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-100">
+                Data Maintenance
+              </h3>
+              <p className="text-xs text-gray-400">
+                Clear out old history to reduce file size.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <select
+              value={pruneMonths}
+              onChange={(e) => setPruneMonths(Number(e.target.value))}
+              className="bg-slate-900 border border-slate-700 text-xs text-white rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-red-500 outline-none"
+            >
+              <option value={6}>Older than 6 Months</option>
+              <option value={12}>Older than 1 Year</option>
+              <option value={24}>Older than 2 Years</option>
+              <option value={36}>Older than 3 Years</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => onPruneData && onPruneData(pruneMonths)} 
+              className="inline-flex items-center gap-2 rounded-full border border-red-800/50 bg-red-900/20 px-4 py-1.5 text-xs font-medium text-red-200 hover:bg-red-900/40 hover:text-white transition-colors"
+            >
+              Run Cleanup
+            </button>
+          </div>
+        </div>
+      </section>
 
       {/* Vendor Management */}
       <section className="rounded-2xl border border-gray-800/60 bg-slate-950/60 px-6 py-4 shadow-sm">

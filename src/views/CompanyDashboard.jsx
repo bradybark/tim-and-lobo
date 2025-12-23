@@ -3,6 +3,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { 
   Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle 
 } from 'lucide-react';
+import { toast } from 'sonner'; 
 
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
@@ -10,7 +11,6 @@ import POView from './POView';
 import VendorManagerView from './VendorManagerView';
 import SettingsView from './SettingsView';
 
-// UPDATED imports
 import { useInventory } from '../context/InventoryContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
 import {
@@ -76,7 +76,7 @@ const CompanyDashboard = ({
     rateParams 
   });
 
-  // --- Legacy Handlers (kept for POView/PlannerView compatibility) ---
+  // --- Legacy Handlers ---
   const updateSkuSetting = useCallback((sku, field, value) => {
     const val = Number.isNaN(Number(value)) ? 0 : Number(value);
     setSettings((prev) => {
@@ -99,6 +99,7 @@ const CompanyDashboard = ({
       eta: formData.get('eta'), received: false, receivedDate: '', vendor: ''
     }]);
     e.target.reset();
+    toast.success(`PO ${poNumber} created`);
   };
 
   const toggleReceivePO = (id) => {
@@ -113,6 +114,7 @@ const CompanyDashboard = ({
     const trimmed = name.trim();
     if (!trimmed) return;
     setVendors((prev) => prev.some(v => v.name === trimmed) ? prev : [...prev, { id: Date.now(), name: trimmed }]);
+    toast.success(`Vendor "${trimmed}" added`);
   };
 
   // --- Export/Sync Logic ---
@@ -120,7 +122,6 @@ const CompanyDashboard = ({
     const imagesBase64 = {};
     for (const [sku, blob] of Object.entries(skuImages)) {
       if (blob) {
-         // Create a temp URL to fetch it if it's a blob, or use directly if string
          const url = blob instanceof Blob ? URL.createObjectURL(blob) : blob;
          imagesBase64[sku] = await urlToBase64(url);
          if (blob instanceof Blob) URL.revokeObjectURL(url);
@@ -135,17 +136,40 @@ const CompanyDashboard = ({
 
   const getFileName = (suffix) => `${orgKey === 'timothy' ? 'timothy' : 'lobo'}_${suffix}`;
   
-  const handleExportExcelAction = () => exportPlannerExcel(plannerData, getFileName('reorder_planner.xlsx'));
-  const handleExportAllAction = () => exportFullWorkbook({ plannerData, snapshots, pos }, getFileName('inventory_workbook.xlsx'));
-  const handleExportLeadTimeAction = () => exportLeadTimeReport({ pos, settings }, getFileName(`lead_time_${new Date().toISOString().slice(0,10)}.xlsx`));
+  const handleExportExcelAction = () => {
+    exportPlannerExcel(plannerData, getFileName('reorder_planner.xlsx'));
+    toast.success('Planner exported to Excel');
+  };
+
+  const handleExportAllAction = () => {
+    exportFullWorkbook({ plannerData, snapshots, pos }, getFileName('inventory_workbook.xlsx'));
+    toast.success('Full workbook exported');
+  };
+
+  const handleExportLeadTimeAction = () => {
+    exportLeadTimeReport({ pos, settings }, getFileName(`lead_time_${new Date().toISOString().slice(0,10)}.xlsx`));
+    toast.success('Lead time report exported');
+  };
   
   const handleExportBackup = async () => {
     const payload = await prepareExportPayload();
     exportJsonBackup(payload, getFileName(`backup_${new Date().toISOString().slice(0,10)}.json`));
+    // Note: We don't toast success here because it's used internally by prune, 
+    // but the caller can toast if needed.
+    return true; 
+  };
+
+  // Wrapper for manual button click
+  const onManualExportBackup = async () => {
+    await handleExportBackup();
+    toast.success('Backup file created');
   };
 
   const handleImportBackup = async (data) => {
-    if (!data || typeof data !== 'object') return alert('Invalid backup file');
+    if (!data || typeof data !== 'object') {
+        toast.error('Invalid backup file');
+        return;
+    }
     if (data.snapshots) setSnapshots(data.snapshots);
     if (data.pos) setPos(data.pos);
     if (data.settings) setSettings(data.settings);
@@ -154,15 +178,19 @@ const CompanyDashboard = ({
     if (data.skuImages) {
       setSkuImages(data.skuImages); 
     }
-    alert('Backup imported successfully.');
+    toast.success('Backup imported successfully');
   };
 
   const handleLinkCloudFile = async () => {
-    if (!window.showSaveFilePicker) return alert('Cloud sync requires Chrome/Edge/Opera.');
+    if (!window.showSaveFilePicker) {
+        toast.error('Cloud sync requires Chrome, Edge, or Opera.');
+        return;
+    }
     try {
       const handle = await window.showSaveFilePicker({ suggestedName: getFileName('cloud.json'), types: [{ accept: { 'application/json': ['.json'] } }] });
       setCloudFileHandle(handle);
       setCloudStatus(`Linked to ${handle.name}`);
+      toast.success('Successfully linked to cloud file');
     } catch (err) { /* cancelled */ }
   };
 
@@ -181,6 +209,7 @@ const CompanyDashboard = ({
       } catch (err) {
         console.error("Sync failed", err);
         setCloudStatus('Sync error - Retry?');
+        toast.error('Cloud sync failed');
       } finally {
         isSyncing.current = false;
       }
@@ -191,16 +220,40 @@ const CompanyDashboard = ({
     return () => { clearTimeout(timer); window.removeEventListener('beforeunload', handleBeforeUnload); };
   }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName, dataLoaded]);
 
+  // --- UPDATED: Safe Prune Data ---
   const handlePruneData = (monthsToKeep) => {
-    if (!confirm(`Are you sure you want to delete data older than ${monthsToKeep} months?`)) return;
-    const cutoffDate = new Date();
-    cutoffDate.setMonth(cutoffDate.getMonth() - monthsToKeep);
-    const cutoffStr = cutoffDate.toISOString().split('T')[0];
-    const newSnapshots = snapshots.filter(s => s.date >= cutoffStr);
-    const newPos = pos.filter(p => !p.received || p.receivedDate >= cutoffStr);
-    setSnapshots(newSnapshots);
-    setPos(newPos);
-    alert('Cleanup Complete.');
+    toast(`Delete data older than ${monthsToKeep} months?`, {
+      description: "This action cannot be undone. A backup will be created automatically.",
+      action: {
+        label: "Backup & Delete",
+        onClick: async () => {
+          // 1. SAFETY FIRST: Force a backup export before deleting
+          try {
+             // We use the internal handler logic
+             await handleExportBackup(); 
+             toast.success("Safety backup created");
+          } catch (err) {
+             console.error("Backup failed", err);
+             toast.error("Backup failed. Aborting cleanup to protect data.");
+             return; 
+          }
+
+          // 2. Proceed with deletion
+          const cutoffDate = new Date();
+          cutoffDate.setMonth(cutoffDate.getMonth() - monthsToKeep);
+          const cutoffStr = cutoffDate.toISOString().split('T')[0];
+          
+          setSnapshots((prev) => prev.filter(s => s.date >= cutoffStr));
+          setPos((prev) => prev.filter(p => !p.received || p.receivedDate >= cutoffStr));
+          
+          toast.success(`Cleanup Complete. Kept data from last ${monthsToKeep} months.`);
+        },
+      },
+      cancel: {
+        label: "Cancel",
+      },
+      duration: 8000, // Give them time to read and decide
+    });
   };
 
   if (!dataLoaded) return <div className="p-10 text-center text-gray-500">Loading database...</div>;
@@ -304,7 +357,7 @@ const CompanyDashboard = ({
             <SettingsView
               onOpenVendors={() => setActiveTab('vendors')}
               onLinkCloudFile={handleLinkCloudFile}
-              onExportBackup={handleExportBackup}
+              onExportBackup={onManualExportBackup} // Use wrapper here
               onImportBackup={handleImportBackup}
               cloudStatus={cloudStatus}
               leadTimeStats={leadTimeStats}
