@@ -1,11 +1,10 @@
 // src/App.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Briefcase, Sun, Moon, Package, Lock } from 'lucide-react';
 import CompanyDashboard from './views/CompanyDashboard';
+import { getOrganizationConfig } from './utils/orgConfig';
 
 // --- Configuration ---
-// ACCESS THE VARIABLE FROM THE .env FILE
-// IMPORTANT: To be secure, VITE_APP_PASSWORD should be the SHA-256 Hash of your password, not the plain text password.
 const APP_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD; 
 // ---------------------
 
@@ -18,11 +17,18 @@ async function sha256(message) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-const OrgCard = ({ name, description, primary, onClick }) => {
+const OrgCard = ({ name, description, themeColor, onClick }) => {
+  // If a specific theme color is provided, we use it.
+  // Otherwise, we fall back to the default "secondary" slate/gray style.
+  const hasColor = Boolean(themeColor);
+
   return (
-    <div className="rounded-3xl bg-slate-900/70 border border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 max-w-sm w-full">
+    <div className="rounded-3xl bg-slate-900/70 border border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 max-w-sm w-full transition-transform hover:scale-[1.02] duration-300">
       <div className="w-32 h-20 rounded-2xl border border-dashed border-slate-600/70 flex items-center justify-center mb-6 bg-slate-900/60">
-        <Package className="w-7 h-7 text-slate-300" />
+        <Package 
+          className="w-7 h-7" 
+          style={{ color: hasColor ? themeColor : '#cbd5e1' }} 
+        />
       </div>
       <h2 className="text-lg font-semibold text-slate-50 mb-1 text-center">
         {name}
@@ -33,9 +39,11 @@ const OrgCard = ({ name, description, primary, onClick }) => {
       <button
         type="button"
         onClick={onClick}
-        className={`inline-flex items-center justify-center gap-2 text-xs font-medium px-5 py-2.5 rounded-xl transition-colors ${
-          primary
-            ? 'bg-emerald-500 text-white hover:bg-emerald-400'
+        // Apply the dynamic color directly to the background
+        style={hasColor ? { backgroundColor: themeColor } : {}}
+        className={`inline-flex items-center justify-center gap-2 text-xs font-medium px-5 py-2.5 rounded-xl transition-all duration-200 ${
+          hasColor
+            ? 'text-white hover:brightness-110 hover:shadow-lg shadow-md'
             : 'bg-slate-100 text-slate-900 hover:bg-white dark:bg-slate-100 dark:text-slate-900'
         }`}
       >
@@ -47,10 +55,10 @@ const OrgCard = ({ name, description, primary, onClick }) => {
 };
 
 function App() {
-  const [selectedOrg, setSelectedOrg] = useState(null); // 'lobo' | 'timothy' | null
+  const organizations = useMemo(() => getOrganizationConfig(), []);
+  const [selectedOrg, setSelectedOrg] = useState(null); 
   
   // -- Authentication State --
-  // If no password env is set, we skip auth (dev mode)
   const [isAuthenticated, setIsAuthenticated] = useState(!APP_PASSWORD_HASH);
   const [passwordInput, setPasswordInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -63,7 +71,6 @@ function App() {
     );
   });
 
-  // Tailwind dark mode via class on <html>
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const root = document.documentElement;
@@ -73,22 +80,20 @@ function App() {
 
   const toggleTheme = () => setIsDarkMode((prev) => !prev);
 
-  // Handle Login Logic with Hashing
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
       const inputHash = await sha256(passwordInput);
       
-      // Compare the hash of input vs stored hash
       if (inputHash === APP_PASSWORD_HASH) {
         setIsAuthenticated(true);
         setErrorMsg('');
       } else {
-        // Fallback for legacy plain-text (remove this after you update your .env)
+        // Fallback for legacy plain-text check (temporary)
         if (passwordInput === APP_PASSWORD_HASH) {
           setIsAuthenticated(true);
           setErrorMsg('');
-          alert("Warning: Your .env password is in plain text. Please update it to a SHA-256 hash.");
+          alert("Warning: Update your .env password to a SHA-256 hash.");
         } else {
           setErrorMsg('Incorrect password');
           setPasswordInput('');
@@ -100,11 +105,9 @@ function App() {
     }
   };
 
-  // If not authenticated, show lock screen
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
-        {/* Theme toggle in top-right */}
         <button
           type="button"
           onClick={toggleTheme}
@@ -152,15 +155,11 @@ function App() {
     );
   }
 
-  // When an org is chosen, show that org's dashboard
   if (selectedOrg) {
-    const companyName =
-      selectedOrg === 'lobo' ? 'Lobo Tool Company' : "Timothy's Toolbox";
-
     return (
       <CompanyDashboard
-        orgKey={selectedOrg}
-        initialCompanyName={companyName}
+        orgKey={selectedOrg.id}
+        initialCompanyName={selectedOrg.name}
         isDarkMode={isDarkMode}
         onToggleTheme={toggleTheme}
         onBack={() => setSelectedOrg(null)}
@@ -168,10 +167,8 @@ function App() {
     );
   }
 
-  // Org selection screen
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
-      {/* Theme toggle in top-right */}
       <button
         type="button"
         onClick={toggleTheme}
@@ -185,23 +182,20 @@ function App() {
           Select Organization
         </h1>
 
-        <div className="flex flex-col md:flex-row items-center justify-center gap-8">
-          <OrgCard
-            name="Lobo Tool Company"
-            description="Manage inventory, tracking, and POs for Lobo Tools."
-            primary={false}
-            onClick={() => setSelectedOrg('lobo')}
-          />
-          <OrgCard
-            name="Timothy's Toolbox"
-            description="Manage inventory, tracking, and POs for Timothy's Toolbox."
-            primary
-            onClick={() => setSelectedOrg('timothy')}
-          />
+        <div className="flex flex-col md:flex-row items-center justify-center gap-8 flex-wrap">
+          {organizations.map((org) => (
+            <OrgCard
+              key={org.id}
+              name={org.name}
+              description={org.description}
+              themeColor={org.themeColor}
+              onClick={() => setSelectedOrg(org)}
+            />
+          ))}
         </div>
 
         <p className="mt-10 text-[11px] text-center text-slate-500">
-          v2.0 • Secure Local Storage • Auto-Save Enabled
+          v2.2 • Modular & Scalable • Secure Local Storage
         </p>
       </div>
     </div>

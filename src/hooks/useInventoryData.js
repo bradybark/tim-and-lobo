@@ -4,10 +4,25 @@ import { get, set } from 'idb-keyval';
 import {
   LOBO_SNAPSHOTS, LOBO_POS, LOBO_SETTINGS, LOBO_VENDORS,
   TIMOTHY_SNAPSHOTS, TIMOTHY_POS, TIMOTHY_SETTINGS, TIMOTHY_VENDORS
-} from '../constants/seedData'; // Adjust path if necessary based on your folder structure
+} from '../constants/seedData'; 
+
+// Map legacy IDs to their seed data. New IDs will default to empty.
+const LEGACY_SEEDS = {
+  lobo: {
+    snapshots: LOBO_SNAPSHOTS,
+    pos: LOBO_POS,
+    settings: LOBO_SETTINGS,
+    vendors: LOBO_VENDORS
+  },
+  timothy: {
+    snapshots: TIMOTHY_SNAPSHOTS,
+    pos: TIMOTHY_POS,
+    settings: TIMOTHY_SETTINGS,
+    vendors: TIMOTHY_VENDORS
+  }
+};
 
 export function useInventoryData(orgKey) {
-  const isTimothy = orgKey === 'timothy';
   const [dataLoaded, setDataLoaded] = useState(false);
 
   // Data States
@@ -21,6 +36,14 @@ export function useInventoryData(orgKey) {
   useEffect(() => {
     async function loadAllData() {
       try {
+        // Determine seed data for this org (if any)
+        const seeds = LEGACY_SEEDS[orgKey] || {
+          snapshots: [],
+          pos: [],
+          settings: [],
+          vendors: []
+        };
+
         // Helper to load from IDB with LocalStorage fallback/migration
         const load = async (key, fallback) => {
           let val = await get(key);
@@ -37,16 +60,16 @@ export function useInventoryData(orgKey) {
           return val || fallback;
         };
 
-        const savedSnaps = await load(`${orgKey}_snapshots`, isTimothy ? TIMOTHY_SNAPSHOTS : LOBO_SNAPSHOTS);
+        const savedSnaps = await load(`${orgKey}_snapshots`, seeds.snapshots);
         setSnapshots(savedSnaps);
 
-        const savedPos = await load(`${orgKey}_pos`, isTimothy ? TIMOTHY_POS : LOBO_POS);
+        const savedPos = await load(`${orgKey}_pos`, seeds.pos);
         setPos(savedPos);
 
-        const savedSettings = await load(`${orgKey}_settings`, isTimothy ? TIMOTHY_SETTINGS : LOBO_SETTINGS);
+        const savedSettings = await load(`${orgKey}_settings`, seeds.settings);
         setSettings(savedSettings);
 
-        const savedVendors = await load(`${orgKey}_vendors`, isTimothy ? TIMOTHY_VENDORS : LOBO_VENDORS);
+        const savedVendors = await load(`${orgKey}_vendors`, seeds.vendors);
         setVendors(savedVendors);
 
         // Image Loading Logic
@@ -82,9 +105,9 @@ export function useInventoryData(orgKey) {
       }
     }
     loadAllData();
-  }, [orgKey, isTimothy]);
+  }, [orgKey]);
 
-  // 2. Auto-Save Data (Images are saved manually via handleImageUpload)
+  // 2. Auto-Save Data 
   useEffect(() => {
     if (!dataLoaded) return;
     set(`${orgKey}_snapshots`, snapshots);
@@ -93,7 +116,7 @@ export function useInventoryData(orgKey) {
     set(`${orgKey}_vendors`, vendors);
   }, [snapshots, pos, settings, vendors, orgKey, dataLoaded]);
 
-  // 3. Image Upload Handler (Persists immediately)
+  // 3. Image Upload Handler
   const handleImageUpload = useCallback(async (sku, blob) => {
     setSkuImages((prev) => {
       const oldUrl = prev[sku];
