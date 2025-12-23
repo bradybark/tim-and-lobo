@@ -1,6 +1,7 @@
 // src/components/ImageUploader.jsx
 import React, { useRef } from 'react'
 import { Icons } from './Icons'
+import { SkuImage } from './SkuImage'
 
 export function ImageUploader({
   imageKey,
@@ -21,16 +22,14 @@ export function ImageUploader({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Ensure it's an image
     if (!file.type.startsWith('image/')) return;
 
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Create canvas for resizing
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 300; // Limit width to 300px
+        const MAX_WIDTH = 150; 
         
         let width = img.width;
         let height = img.height;
@@ -44,14 +43,18 @@ export function ImageUploader({
         canvas.height = height;
 
         const ctx = canvas.getContext('2d');
+
+        // Fill background with white (fixes transparent PNGs turning black)
+        ctx.fillStyle = '#FFFFFF'; 
+        ctx.fillRect(0, 0, width, height);
+        
         ctx.drawImage(img, 0, 0, width, height);
 
-        
         canvas.toBlob((blob) => {
           if (blob) {
             onUpload(imageKey, blob);
           }
-        }, 'image/jpeg', 0.7);
+        }, 'image/jpeg', 0.8);
       };
       img.src = event.target.result;
     };
@@ -59,6 +62,7 @@ export function ImageUploader({
   };
 
   const containerClasses = `cursor-pointer overflow-hidden relative group flex items-center justify-center ${className}`
+  
   const emptyStateClasses = currentImage
     ? ''
     : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
@@ -80,13 +84,16 @@ export function ImageUploader({
       >
         {currentImage ? (
           <>
-            <img
-              src={currentImage}
-              alt="Uploaded"
-              className={`w-full h-full object-${objectFit} object-center`}
-            />
-            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all flex items-center justify-center">
-              <span className="text-white opacity-0 group-hover:opacity-100 scale-75">
+            <div className="w-full h-full">
+              <SkuImage
+                data={currentImage}
+                alt="Uploaded"
+                className={`w-full h-full object-${objectFit} object-center`}
+              />
+            </div>
+            {/* UPDATED OVERLAY CSS: Uses opacity-0 to ensure it's invisible by default */}
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+              <span className="text-white scale-75">
                 <Icons.Camera className="w-6 h-6" />
               </span>
             </div>

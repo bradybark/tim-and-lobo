@@ -20,7 +20,9 @@ import {
   exportLeadTimeReport,
   exportJsonBackup
 } from '../utils/export';
+import { optimizeImageLibrary } from '../utils/imageOptimizer'; // <--- IMPORT ADDED
 
+// Helper to convert Blob -> Base64 for JSON storage
 const urlToBase64 = async (url) => {
   try {
     const response = await fetch(url);
@@ -77,6 +79,34 @@ const CompanyDashboard = ({
     rateParams 
   });
 
+  // --- Inventory Log Handlers ---
+  const handleAddSnapshot = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const sku = formData.get('sku').trim();
+    const qty = parseInt(formData.get('qty'), 10);
+    const date = formData.get('date');
+
+    if (!sku || isNaN(qty)) return;
+
+    setSnapshots((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        sku,
+        qty,
+        date,
+      },
+    ]);
+    e.target.reset();
+    toast.success(`Logged ${qty} units for ${sku}`);
+  };
+
+  const deleteSnapshot = (id) => {
+    setSnapshots((prev) => prev.filter((s) => s.id !== id));
+    toast.error('Snapshot deleted');
+  };
+
   // --- Legacy Handlers ---
   const updateSkuSetting = useCallback((sku, field, value) => {
     const val = Number.isNaN(Number(value)) ? 0 : Number(value);
@@ -119,24 +149,111 @@ const CompanyDashboard = ({
   };
 
   // --- Export/Sync Logic ---
-  const prepareExportPayload = async () => {
-    const imagesBase64 = {};
-    for (const [sku, blob] of Object.entries(skuImages)) {
-      if (blob) {
-         const url = blob instanceof Blob ? URL.createObjectURL(blob) : blob;
-         imagesBase64[sku] = await urlToBase64(url);
-         if (blob instanceof Blob) URL.revokeObjectURL(url);
-      }
-    }
+  
+  const getFileName = (suffix) => `${orgKey === 'timothy' ? 'timothy' : 'lobo'}_${suffix}`;
 
+  const prepareDataPayload = () => {
     return { 
-      version: 1, orgKey, companyName, exportedAt: new Date().toISOString(), 
-      snapshots, pos, settings, vendors, skuImages: imagesBase64 
+      version: 1, 
+      orgKey, 
+      companyName, 
+      exportedAt: new Date().toISOString(), 
+      snapshots, 
+      pos, 
+      settings, 
+      vendors,
     };
   };
 
-  const getFileName = (suffix) => `${orgKey === 'timothy' ? 'timothy' : 'lobo'}_${suffix}`;
+  const prepareImagesPayload = async () => {
+    const imagesBase64 = {};
+    for (const [sku, blob] of Object.entries(skuImages)) {
+      if (blob) {
+         if (typeof blob === 'string') {
+            imagesBase64[sku] = blob;
+         } else {
+            const url = URL.createObjectURL(blob);
+            imagesBase64[sku] = await urlToBase64(url);
+            URL.revokeObjectURL(url);
+         }
+      }
+    }
+    return {
+      version: 1,
+      orgKey,
+      type: 'image_archive',
+      exportedAt: new Date().toISOString(),
+      skuImages: imagesBase64
+    };
+  };
+
+  // --- Handlers for Buttons ---
   
+  const handleExportDataOnly = () => {
+    const payload = prepareDataPayload();
+    exportJsonBackup(payload, getFileName(`database_${new Date().toISOString().slice(0,10)}.json`));
+    toast.success('Database exported (Images excluded)');
+  };
+
+  const handleExportImagesOnly = async () => {
+    toast.promise(async () => {
+      const payload = await prepareImagesPayload();
+      exportJsonBackup(payload, getFileName(`images_${new Date().toISOString().slice(0,10)}.json`));
+    }, {
+      loading: 'Packaging images...',
+      success: 'Images exported successfully',
+      error: 'Failed to export images'
+    });
+  };
+
+  const handleExportFullBackup = async () => {
+    const data = prepareDataPayload();
+    const images = await prepareImagesPayload();
+    const fullPayload = { ...data, skuImages: images.skuImages };
+    exportJsonBackup(fullPayload, getFileName(`full_backup_${new Date().toISOString().slice(0,10)}.json`));
+    return true;
+  };
+
+  const handleImportBackup = async (data) => {
+    if (!data || typeof data !== 'object') {
+        toast.error('Invalid backup file');
+        return;
+    }
+    
+    if (data.snapshots || data.pos || data.settings) {
+      if (data.snapshots) setSnapshots(data.snapshots);
+      if (data.pos) setPos(data.pos);
+      if (data.settings) setSettings(data.settings);
+      if (data.vendors) setVendors(data.vendors);
+      toast.success('Database imported successfully');
+    }
+
+    if (data.skuImages) {
+      setSkuImages(prev => ({ ...prev, ...data.skuImages }));
+      toast.success(`Imported ${Object.keys(data.skuImages).length} images`);
+    }
+  };
+
+  // --- Optimization Handler ---
+  const handleOptimizeImages = async () => {
+    const count = Object.keys(skuImages).length;
+    if (count === 0) {
+      toast.error("No images to optimize.");
+      return;
+    }
+
+    toast.promise(async () => {
+      const optimizedImages = await optimizeImageLibrary(skuImages);
+      setSkuImages(optimizedImages); // Updates state -> Triggers Cloud Sync
+    }, {
+      loading: `Optimizing ${count} images...`,
+      success: 'Optimization complete! Library size reduced.',
+      error: 'Failed to optimize images'
+    });
+  };
+
+
+  // --- Excel Exports ---
   const handleExportExcelAction = () => {
     exportPlannerExcel(plannerData, getFileName('reorder_planner.xlsx'));
     toast.success('Planner exported to Excel');
@@ -151,37 +268,8 @@ const CompanyDashboard = ({
     exportLeadTimeReport({ pos, settings }, getFileName(`lead_time_${new Date().toISOString().slice(0,10)}.xlsx`));
     toast.success('Lead time report exported');
   };
-  
-  const handleExportBackup = async () => {
-    const payload = await prepareExportPayload();
-    exportJsonBackup(payload, getFileName(`backup_${new Date().toISOString().slice(0,10)}.json`));
-    // Note: We don't toast success here because it's used internally by prune, 
-    // but the caller can toast if needed.
-    return true; 
-  };
 
-  // Wrapper for manual button click
-  const onManualExportBackup = async () => {
-    await handleExportBackup();
-    toast.success('Backup file created');
-  };
-
-  const handleImportBackup = async (data) => {
-    if (!data || typeof data !== 'object') {
-        toast.error('Invalid backup file');
-        return;
-    }
-    if (data.snapshots) setSnapshots(data.snapshots);
-    if (data.pos) setPos(data.pos);
-    if (data.settings) setSettings(data.settings);
-    if (data.vendors) setVendors(data.vendors);
-    
-    if (data.skuImages) {
-      setSkuImages(data.skuImages); 
-    }
-    toast.success('Backup imported successfully');
-  };
-
+  // --- Cloud Sync ---
   const handleLinkCloudFile = async () => {
     if (!window.showSaveFilePicker) {
         toast.error('Cloud sync requires Chrome, Edge, or Opera.');
@@ -202,9 +290,12 @@ const CompanyDashboard = ({
       isSyncing.current = true;
       setCloudStatus('Syncing...');
       try {
-        const payload = await prepareExportPayload();
+        const data = prepareDataPayload();
+        const images = await prepareImagesPayload();
+        const fullPayload = { ...data, skuImages: images.skuImages };
+        
         const writable = await cloudFileHandle.createWritable();
-        await writable.write(JSON.stringify(payload, null, 2));
+        await writable.write(JSON.stringify(fullPayload, null, 2));
         await writable.close();
         setCloudStatus(`Linked to ${cloudFileHandle.name} · Synced ${new Date().toLocaleTimeString()}`);
       } catch (err) {
@@ -221,39 +312,29 @@ const CompanyDashboard = ({
     return () => { clearTimeout(timer); window.removeEventListener('beforeunload', handleBeforeUnload); };
   }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName, dataLoaded]);
 
-  // --- UPDATED: Safe Prune Data ---
+  // --- Prune Data ---
   const handlePruneData = (monthsToKeep) => {
     toast(`Delete data older than ${monthsToKeep} months?`, {
       description: "This action cannot be undone. A backup will be created automatically.",
       action: {
         label: "Backup & Delete",
         onClick: async () => {
-          // 1. SAFETY FIRST: Force a backup export before deleting
           try {
-             // We use the internal handler logic
-             await handleExportBackup(); 
+             await handleExportFullBackup(); 
              toast.success("Safety backup created");
           } catch (err) {
-             console.error("Backup failed", err);
-             toast.error("Backup failed. Aborting cleanup to protect data.");
+             toast.error("Backup failed. Aborting cleanup.");
              return; 
           }
-
-          // 2. Proceed with deletion
           const cutoffDate = new Date();
           cutoffDate.setMonth(cutoffDate.getMonth() - monthsToKeep);
           const cutoffStr = cutoffDate.toISOString().split('T')[0];
-          
           setSnapshots((prev) => prev.filter(s => s.date >= cutoffStr));
           setPos((prev) => prev.filter(p => !p.received || p.receivedDate >= cutoffStr));
-          
-          toast.success(`Cleanup Complete. Kept data from last ${monthsToKeep} months.`);
+          toast.success(`Cleanup Complete.`);
         },
       },
-      cancel: {
-        label: "Cancel",
-      },
-      duration: 8000, // Give them time to read and decide
+      duration: 8000,
     });
   };
 
@@ -337,7 +418,13 @@ const CompanyDashboard = ({
             />
           )}
           {activeTab === 'inventory' && (
-            <InventoryLogView />
+            <InventoryLogView 
+              snapshots={snapshots}
+              pos={pos}
+              skuImages={skuImages}
+              handleAddSnapshot={handleAddSnapshot}
+              deleteSnapshot={deleteSnapshot}
+            />
           )}
           {activeTab === 'pos' && (
             <POView
@@ -367,10 +454,12 @@ const CompanyDashboard = ({
             <SettingsView
               onOpenVendors={() => setActiveTab('vendors')}
               onLinkCloudFile={handleLinkCloudFile}
-              onExportBackup={onManualExportBackup} // Use wrapper here
+              onExportData={handleExportDataOnly}
+              onExportImages={handleExportImagesOnly}
               onImportBackup={handleImportBackup}
               cloudStatus={cloudStatus}
               onPruneData={handlePruneData}
+              onOptimizeImages={handleOptimizeImages}
             />
           )}
         </main>

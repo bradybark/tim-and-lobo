@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { VendorCell } from '../components/VendorCell';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
+import { SkuImage } from '../components/SkuImage'; // Import added
 
 const formatDate = (dateLike) => {
   if (!dateLike) return '-';
@@ -28,8 +29,8 @@ const POView = ({
   addVendor,
 }) => {
   const getDiffColor = (days) => {
-    if (days > 0) return 'text-green-600 dark:text-green-400'; // early
-    if (days < 0) return 'text-red-600 dark:text-red-400'; // late
+    if (days > 0) return 'text-green-600 dark:text-green-400';
+    if (days < 0) return 'text-red-600 dark:text-red-400';
     return 'text-gray-500 dark:text-gray-400';
   };
 
@@ -39,7 +40,6 @@ const POView = ({
     return 'On Time';
   };
 
-  // Pre-process POS to include calculated fields for sorting
   const preparedPos = useMemo(() => {
     return pos.map(p => {
       let daysDiff = null;
@@ -58,7 +58,6 @@ const POView = ({
 
   return (
     <div className="space-y-6">
-      {/* Create PO */}
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
           Create Purchase Order
@@ -138,7 +137,6 @@ const POView = ({
         </form>
       </div>
 
-      {/* PO table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto custom-scroll pb-4">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -176,9 +174,9 @@ const POView = ({
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white">
                         <div className="flex items-center">
                           {skuImages[p.sku] && (
-                            <img
-                              src={skuImages[p.sku]}
-                              alt=""
+                            /* UPDATED: Using SkuImage component */
+                            <SkuImage
+                              data={skuImages[p.sku]}
                               className="w-6 h-6 rounded mr-2 object-cover border dark:border-gray-600"
                             />
                           )}
@@ -266,7 +264,6 @@ const POView = ({
                   );
                 })}
 
-                {/* --- ADDED BLANK STATE ROW --- */}
                 {processedData.length === 0 && (
                   <tr>
                     <td

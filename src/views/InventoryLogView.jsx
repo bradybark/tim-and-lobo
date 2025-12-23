@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
+import { SkuImage } from '../components/SkuImage';
 import { getDaysDiff } from '../utils/date'; 
 
 const formatDate = (dateLike) => {
@@ -23,7 +24,6 @@ const InventoryLogView = ({
   skuImages = {},
   pos = [],
 }) => {
-  // Compute period metrics per snapshot
   const processedLog = useMemo(() => {
     if (!snapshots || snapshots.length === 0) return [];
 
@@ -87,7 +87,6 @@ const InventoryLogView = ({
 
   return (
     <div className="space-y-6">
-      {/* Add physical count */}
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
           Add Physical Count
@@ -142,13 +141,11 @@ const InventoryLogView = ({
         </form>
       </div>
 
-      {/* Log table */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto custom-scroll pb-4">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                {/* REMOVED STICKY CLASSES */}
                 <SortableHeaderCell 
                   label="Date" 
                   sortKey="date" 
@@ -177,16 +174,15 @@ const InventoryLogView = ({
                   key={s.id}
                   className="hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
-                  {/* REMOVED STICKY CLASSES */}
+                  {/* FIX 1: Changed dark:text-200 to dark:text-gray-200 */}
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
                     {formatDate(s.date)}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
                     <div className="flex items-center">
                       {skuImages[s.sku] && (
-                        <img
-                          src={skuImages[s.sku]}
-                          alt=""
+                        <SkuImage
+                          data={skuImages[s.sku]}
                           className="w-6 h-6 rounded mr-2 object-cover border dark:border-gray-600"
                         />
                       )}
@@ -208,9 +204,12 @@ const InventoryLogView = ({
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">
                     {s.daysInPeriod}
                   </td>
+                  
+                  {/* FIX 2: Changed dark:text-200 to dark:text-gray-200 */}
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-200">
                     {s.unitsSold}
                   </td>
+
                   <td className="px-3 py-4 whitespace-nowrap text-sm text-right font-medium text-blue-600 dark:text-blue-400">
                     {s.dailyRate === 0 ? 0 : s.dailyRate.toFixed(2)}
                   </td>
