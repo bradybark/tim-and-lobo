@@ -4,6 +4,7 @@ import {
   Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle, BarChart3
 } from 'lucide-react';
 import { toast } from 'sonner'; 
+import { get, set } from 'idb-keyval'; // <--- Required for permanent access
 
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
@@ -78,6 +79,33 @@ const CompanyDashboard = ({
     settings, 
     rateParams 
   });
+
+  // --- NEW: Restore File Handle on Boot ---
+  useEffect(() => {
+    const restoreHandle = async () => {
+      try {
+        const handle = await get('db_file_handle');
+        if (handle) {
+          // Check permissions on load
+          const opts = { mode: 'readwrite' };
+          // If permission is 'granted', we are good. 
+          // If 'prompt', the browser might block auto-save until user interaction, 
+          // but we still restore the handle so the user doesn't have to find the file again.
+          if ((await handle.queryPermission(opts)) === 'granted') {
+             setCloudFileHandle(handle);
+             setCloudStatus(`Restored connection to ${handle.name}`);
+          } else {
+             // We have the handle, but need to re-verify later
+             setCloudFileHandle(handle);
+             setCloudStatus('⚠️ Permission verification needed'); 
+          }
+        }
+      } catch (err) {
+        console.error('Could not restore file handle:', err);
+      }
+    };
+    restoreHandle();
+  }, []);
 
   // --- Inventory Log Handlers ---
   const handleAddSnapshot = (e) => {
@@ -269,20 +297,48 @@ const CompanyDashboard = ({
     toast.success('Lead time report exported');
   };
 
-  // --- Cloud Sync ---
+  // --- Cloud Sync: OPEN + LINK (Unified) ---
   const handleLinkCloudFile = async () => {
-    if (!window.showSaveFilePicker) {
+    if (!window.showOpenFilePicker) {
         toast.error('Cloud sync requires Chrome, Edge, or Opera.');
         return;
     }
+
     try {
-      const handle = await window.showSaveFilePicker({ suggestedName: getFileName('cloud.json'), types: [{ accept: { 'application/json': ['.json'] } }] });
+      // 1. Open the file (Allows Reading)
+      const [handle] = await window.showOpenFilePicker({
+        types: [{ accept: { 'application/json': ['.json'] } }],
+        multiple: false,
+      });
+
+      // 2. Read content immediately
+      const file = await handle.getFile();
+      const text = await file.text();
+      try {
+        const json = JSON.parse(text);
+        // Load data into app
+        await handleImportBackup(json);
+        toast.success('Database loaded from file');
+      } catch (parseErr) {
+        console.error("File parse error", parseErr);
+        toast.error("Linked file is empty or invalid JSON. Starting fresh.");
+      }
+      
+      // 3. Save handle to IDB for permanent access
+      await set('db_file_handle', handle);
+
+      // 4. Set state
       setCloudFileHandle(handle);
       setCloudStatus(`Linked to ${handle.name}`);
-      toast.success('Successfully linked to cloud file');
-    } catch (err) { /* cancelled */ }
+      toast.success('Sync connection established');
+
+    } catch (err) { 
+      // User cancelled picker
+      console.log('Link cancelled', err);
+    }
   };
 
+  // --- Auto-Sync Logic ---
   useEffect(() => {
     if (!cloudFileHandle || !dataLoaded) return;
     const syncData = async () => {
@@ -294,14 +350,21 @@ const CompanyDashboard = ({
         const images = await prepareImagesPayload();
         const fullPayload = { ...data, skuImages: images.skuImages };
         
+        // Check permission if needed
+        const opts = { mode: 'readwrite' };
+        if ((await cloudFileHandle.queryPermission(opts)) !== 'granted') {
+           // Attempt to request, though this might fail if not triggered by user action
+           // If it fails, the catch block catches it.
+           await cloudFileHandle.requestPermission(opts);
+        }
+
         const writable = await cloudFileHandle.createWritable();
         await writable.write(JSON.stringify(fullPayload, null, 2));
         await writable.close();
         setCloudStatus(`Linked to ${cloudFileHandle.name} · Synced ${new Date().toLocaleTimeString()}`);
       } catch (err) {
         console.error("Sync failed", err);
-        setCloudStatus('Sync error - Retry?');
-        toast.error('Cloud sync failed');
+        setCloudStatus('Sync paused. Re-link file in Settings if needed.');
       } finally {
         isSyncing.current = false;
       }
