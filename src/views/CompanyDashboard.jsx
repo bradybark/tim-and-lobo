@@ -20,7 +20,7 @@ import {
   exportLeadTimeReport,
   exportJsonBackup
 } from '../utils/export';
-import { optimizeImageLibrary } from '../utils/imageOptimizer'; // <--- IMPORT ADDED
+import { optimizeImageLibrary } from '../utils/imageOptimizer';
 
 // Helper to convert Blob -> Base64 for JSON storage
 const urlToBase64 = async (url) => {
@@ -244,7 +244,7 @@ const CompanyDashboard = ({
 
     toast.promise(async () => {
       const optimizedImages = await optimizeImageLibrary(skuImages);
-      setSkuImages(optimizedImages); // Updates state -> Triggers Cloud Sync
+      setSkuImages(optimizedImages); 
     }, {
       loading: `Optimizing ${count} images...`,
       success: 'Optimization complete! Library size reduced.',
