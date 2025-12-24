@@ -28,7 +28,7 @@
     * **Sync Safety:** Prevents closing the tab while data is syncing to avoid corruption.
 * **Secure Access:** Application access is protected via **SHA-256** password hashing.
 
-* ## ⚙️ Configuration
+## ⚙️ Configuration
 
 To customize the application, create a `.env` file in the project root:
 
