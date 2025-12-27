@@ -1,23 +1,10 @@
 // src/App.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { Briefcase, Sun, Moon, Package, Lock } from 'lucide-react';
-import { Toaster, toast } from 'sonner'; // Updated imports
+import { Briefcase, Sun, Moon, Package } from 'lucide-react';
+import { Toaster } from 'sonner'; 
 import CompanyDashboard from './views/CompanyDashboard';
 import { getOrganizationConfig } from './utils/orgConfig';
 import { InventoryProvider } from './context/InventoryContext'; 
-
-// --- Configuration ---
-const APP_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD; 
-// ---------------------
-
-// Helper: SHA-256 Hashing
-async function sha256(message) {
-  if (!message) return '';
-  const msgBuffer = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 const OrgCard = ({ name, description, themeColor, onClick }) => {
   const hasColor = Boolean(themeColor);
@@ -56,12 +43,8 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
 function App() {
   const organizations = useMemo(() => getOrganizationConfig(), []);
   const [selectedOrg, setSelectedOrg] = useState(null); 
-  
-  // -- Authentication State --
-  const [isAuthenticated, setIsAuthenticated] = useState(!APP_PASSWORD_HASH);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
 
+  // --- Theme Management ---
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window === 'undefined') return true;
     return (
@@ -79,95 +62,10 @@ function App() {
 
   const toggleTheme = () => setIsDarkMode((prev) => !prev);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    try {
-      const inputHash = await sha256(passwordInput);
-      
-      if (inputHash === APP_PASSWORD_HASH) {
-        setIsAuthenticated(true);
-        setErrorMsg('');
-        toast.success('Access granted');
-      } else {
-        if (passwordInput === APP_PASSWORD_HASH) {
-          setIsAuthenticated(true);
-          setErrorMsg('');
-          // FIXED: Replaced blocking alert with non-blocking warning toast
-          toast.warning("Security Warning: Update your .env password to a SHA-256 hash.", {
-            duration: 6000,
-          });
-        } else {
-          setErrorMsg('Incorrect password');
-          toast.error('Incorrect password');
-          setPasswordInput('');
-        }
-      }
-    } catch (error) {
-      console.error("Hashing error", error);
-      setErrorMsg('Authentication Error');
-      toast.error('Authentication Error');
-    }
-  };
-
-  // --- LOGIN SCREEN ---
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
-        {/* ADDED: Toaster must be rendered here to show login errors/warnings */}
-        <Toaster position="top-center" richColors />
-        
-        <button
-          type="button"
-          onClick={toggleTheme}
-          className="fixed top-4 right-4 inline-flex items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 p-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm"
-        >
-          {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
-
-        <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-8 border border-slate-200 dark:border-slate-800">
-          <div className="flex justify-center mb-6">
-            <div className="p-3 bg-indigo-500/10 rounded-full">
-              <Lock className="w-8 h-8 text-indigo-500" />
-            </div>
-          </div>
-          <h2 className="text-2xl font-bold text-center text-slate-900 dark:text-white mb-2">
-            Protected Access
-          </h2>
-          <p className="text-center text-slate-500 dark:text-slate-400 mb-6 text-sm">
-            Please enter the password to view the dashboard.
-          </p>
-          
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Enter Password"
-                className="w-full px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition-colors"
-                autoFocus
-              />
-              {errorMsg && (
-                <p className="text-red-500 text-xs mt-2 ml-1 font-medium">{errorMsg}</p>
-              )}
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-lg transition-colors shadow-lg shadow-indigo-500/20"
-            >
-              Access Dashboard
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   // --- DASHBOARD SCREEN ---
   if (selectedOrg) {
     return (
       <InventoryProvider orgKey={selectedOrg.id}>
-        {/* Kept Toaster here for Dashboard views */}
         <Toaster position="top-center" richColors />
         <CompanyDashboard
           initialCompanyName={selectedOrg.name}
@@ -180,10 +78,9 @@ function App() {
     );
   }
 
-  // --- ORG SELECTION SCREEN ---
+  // --- ORG SELECTION SCREEN (Default) ---
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
-      {/* ADDED: Toaster must be rendered here as well */}
       <Toaster position="top-center" richColors />
 
       <button
@@ -212,7 +109,7 @@ function App() {
         </div>
 
         <p className="mt-10 text-[11px] text-center text-slate-500">
-          v2.2 • Modular & Scalable • Secure Local Storage
+          v2.4 • Modular & Scalable • Local Storage
         </p>
       </div>
     </div>

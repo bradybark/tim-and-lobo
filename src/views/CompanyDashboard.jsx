@@ -4,7 +4,7 @@ import {
   Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle, BarChart3
 } from 'lucide-react';
 import { toast } from 'sonner'; 
-import { get, set } from 'idb-keyval'; // <--- Required for permanent access
+import { get, set } from 'idb-keyval';
 
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
@@ -22,6 +22,7 @@ import {
   exportJsonBackup
 } from '../utils/export';
 import { optimizeImageLibrary } from '../utils/imageOptimizer';
+import { createSnapshotUrl, parseSnapshotFromUrl, shortenUrl } from '../utils/share';
 
 // Helper to convert Blob -> Base64 for JSON storage
 const urlToBase64 = async (url) => {
@@ -80,7 +81,7 @@ const CompanyDashboard = ({
     rateParams 
   });
 
-  // --- NEW: Restore File Handle on Boot ---
+  // --- Restore File Handle on Boot ---
   useEffect(() => {
     const restoreHandle = async () => {
       try {
@@ -88,14 +89,10 @@ const CompanyDashboard = ({
         if (handle) {
           // Check permissions on load
           const opts = { mode: 'readwrite' };
-          // If permission is 'granted', we are good. 
-          // If 'prompt', the browser might block auto-save until user interaction, 
-          // but we still restore the handle so the user doesn't have to find the file again.
           if ((await handle.queryPermission(opts)) === 'granted') {
              setCloudFileHandle(handle);
              setCloudStatus(`Restored connection to ${handle.name}`);
           } else {
-             // We have the handle, but need to re-verify later
              setCloudFileHandle(handle);
              setCloudStatus('⚠️ Permission verification needed'); 
           }
@@ -177,7 +174,6 @@ const CompanyDashboard = ({
   };
 
   // --- Export/Sync Logic ---
-  
   const getFileName = (suffix) => `${orgKey === 'timothy' ? 'timothy' : 'lobo'}_${suffix}`;
 
   const prepareDataPayload = () => {
@@ -216,7 +212,6 @@ const CompanyDashboard = ({
   };
 
   // --- Handlers for Buttons ---
-  
   const handleExportDataOnly = () => {
     const payload = prepareDataPayload();
     exportJsonBackup(payload, getFileName(`database_${new Date().toISOString().slice(0,10)}.json`));
@@ -280,7 +275,6 @@ const CompanyDashboard = ({
     });
   };
 
-
   // --- Excel Exports ---
   const handleExportExcelAction = () => {
     exportPlannerExcel(plannerData, getFileName('reorder_planner.xlsx'));
@@ -305,18 +299,15 @@ const CompanyDashboard = ({
     }
 
     try {
-      // 1. Open the file (Allows Reading)
       const [handle] = await window.showOpenFilePicker({
         types: [{ accept: { 'application/json': ['.json'] } }],
         multiple: false,
       });
 
-      // 2. Read content immediately
       const file = await handle.getFile();
       const text = await file.text();
       try {
         const json = JSON.parse(text);
-        // Load data into app
         await handleImportBackup(json);
         toast.success('Database loaded from file');
       } catch (parseErr) {
@@ -324,16 +315,12 @@ const CompanyDashboard = ({
         toast.error("Linked file is empty or invalid JSON. Starting fresh.");
       }
       
-      // 3. Save handle to IDB for permanent access
       await set('db_file_handle', handle);
-
-      // 4. Set state
       setCloudFileHandle(handle);
       setCloudStatus(`Linked to ${handle.name}`);
       toast.success('Sync connection established');
 
     } catch (err) { 
-      // User cancelled picker
       console.log('Link cancelled', err);
     }
   };
@@ -350,11 +337,8 @@ const CompanyDashboard = ({
         const images = await prepareImagesPayload();
         const fullPayload = { ...data, skuImages: images.skuImages };
         
-        // Check permission if needed
         const opts = { mode: 'readwrite' };
         if ((await cloudFileHandle.queryPermission(opts)) !== 'granted') {
-           // Attempt to request, though this might fail if not triggered by user action
-           // If it fails, the catch block catches it.
            await cloudFileHandle.requestPermission(opts);
         }
 
@@ -400,6 +384,51 @@ const CompanyDashboard = ({
       duration: 8000,
     });
   };
+
+  // --- SNAPSHOT URL LOGIC ---
+  const handleCreateShareLink = async (isShortenEnabled) => {
+    const payload = prepareDataPayload(); 
+    try {
+      let url = createSnapshotUrl(payload);
+      
+      if (isShortenEnabled) {
+          const short = await shortenUrl(url);
+          if (short) {
+              url = short;
+              toast.success("Short link generated!");
+          } else {
+              toast.warning("Shortener unavailable. Copied full link instead.");
+          }
+      }
+
+      navigator.clipboard.writeText(url);
+      if (!isShortenEnabled) toast.success("Snapshot URL copied to clipboard!");
+    } catch (err) {
+      console.error(err);
+      toast.error("Data too large to create a URL link.");
+    }
+  };
+
+  // Check for shared data on load
+  useEffect(() => {
+    if (!dataLoaded) return;
+    
+    const sharedData = parseSnapshotFromUrl();
+    if (sharedData) {
+      toast("Shared Snapshot Detected", {
+        description: `Found inventory data. Load it?`,
+        action: {
+          label: "Load Snapshot",
+          onClick: async () => {
+            await handleImportBackup(sharedData); 
+            // Clear hash
+            window.history.replaceState(null, null, ' '); 
+          }
+        },
+        duration: 10000,
+      });
+    }
+  }, [dataLoaded]); 
 
   if (!dataLoaded) return <div className="p-10 text-center text-gray-500">Loading database...</div>;
 
@@ -523,6 +552,7 @@ const CompanyDashboard = ({
               cloudStatus={cloudStatus}
               onPruneData={handlePruneData}
               onOptimizeImages={handleOptimizeImages}
+              onCreateShareLink={handleCreateShareLink}
             />
           )}
         </main>

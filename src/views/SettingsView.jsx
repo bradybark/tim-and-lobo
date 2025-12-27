@@ -7,7 +7,8 @@ import {
   Users,
   Trash2, 
   Image as ImageIcon,
-  Zap
+  Zap,
+  Share2
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -19,10 +20,15 @@ const SettingsView = ({
   onImportBackup,
   cloudStatus,
   onPruneData,
-  onOptimizeImages, // <--- NEW PROP
+  onOptimizeImages,
+  onCreateShareLink,
 }) => {
   const fileInputRef = useRef(null);
   const [pruneMonths, setPruneMonths] = useState(12);
+  
+  // --- NEW: Shorten Toggle State ---
+  const [isShortenEnabled, setIsShortenEnabled] = useState(false); 
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
 
   const handleImportClick = () => {
     if (!onImportBackup) return;
@@ -42,12 +48,19 @@ const SettingsView = ({
         onImportBackup(json);
       } catch (err) {
         console.error('Failed to parse backup file', err);
-        toast.error('Failed to read backup file. Please make sure it is a valid JSON export.');
+        toast.error('Failed to read backup file. Valid JSON required.');
       }
     };
     reader.readAsText(file);
     e.target.value = '';
   };
+
+  // Wrapper to handle loading state
+  const handleShareClick = async () => {
+    setIsGeneratingLink(true);
+    await onCreateShareLink(isShortenEnabled);
+    setIsGeneratingLink(false);
+  }
 
   return (
     <div className="space-y-8">
@@ -83,6 +96,51 @@ const SettingsView = ({
             )}
           </div>
         </section>
+
+      {/* Share Snapshot Section */}
+      <section className="rounded-2xl border border-indigo-500/30 bg-indigo-900/10 px-6 py-5 shadow-sm">
+        <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-100">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400">
+            <Share2 className="h-4 w-4" />
+          </span>
+          <span>Share Snapshot</span>
+        </h2>
+        
+        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="text-xs text-gray-400 space-y-2">
+            <p>Generate a URL containing your current data (excluding images) to share with others.</p>
+            
+            {/* --- NEW: Checkbox --- */}
+            <label className="flex items-center gap-2 cursor-pointer group select-none">
+              <div className="relative flex items-center">
+                <input 
+                  type="checkbox" 
+                  checked={isShortenEnabled}
+                  onChange={(e) => setIsShortenEnabled(e.target.checked)}
+                  className="peer h-4 w-4 rounded border-gray-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500/50 cursor-pointer"
+                />
+              </div>
+              <span className={`transition-colors ${isShortenEnabled ? 'text-indigo-300' : 'text-gray-500 group-hover:text-gray-400'}`}>
+                Shorten Link (TinyURL)
+              </span>
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleShareClick}
+            disabled={isGeneratingLink}
+            className={`whitespace-nowrap inline-flex items-center gap-2 rounded-full border border-indigo-500 bg-indigo-500/10 px-4 py-2 text-xs font-medium text-indigo-300 transition-all ${
+              isGeneratingLink 
+                ? 'opacity-50 cursor-not-allowed' 
+                : 'hover:bg-indigo-500 hover:text-white'
+            }`}
+          >
+            <Share2 className={`h-3.5 w-3.5 ${isGeneratingLink ? 'animate-pulse' : ''}`} />
+            <span>{isGeneratingLink ? 'Generating...' : 'Copy Link'}</span>
+          </button>
+        </div>
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Manual Data Backup */}
@@ -144,7 +202,7 @@ const SettingsView = ({
           </h2>
 
           <div className="mt-4 space-y-3">
-            {/* Optimize Button (New) */}
+            {/* Optimize Button */}
             <div className="flex items-center justify-between rounded-xl border border-gray-800/80 bg-slate-900/60 px-4 py-3">
               <div>
                 <p className="text-sm font-medium text-gray-100">Optimize Library</p>
