@@ -65,16 +65,16 @@ const SettingsView = ({
   return (
     <div className="space-y-8">
       {/* Cloud Sync */}
-      <section className="rounded-2xl border border-gray-800/60 bg-slate-950/60 px-6 py-5 shadow-sm">
+      <section className="rounded-2xl border border-gray-200 dark:border-gray-800/60 bg-white dark:bg-slate-950/60 px-6 py-5 shadow-sm">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1.5">
-              <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-100">
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/15 text-indigo-400">
+              <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-900 dark:text-gray-100">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
                   <UploadCloud className="h-4 w-4" />
                 </span>
                 <span>Cloud Sync (Live)</span>
               </h2>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 Syncs your full database (including images) to a local file for cloud backup.
               </p>
             </div>
@@ -84,13 +84,13 @@ const SettingsView = ({
             <button
               type="button"
               onClick={onLinkCloudFile}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 dark:bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 dark:hover:bg-indigo-500/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             >
               <UploadCloud className="h-4 w-4" />
               <span>Link to Database File</span>
             </button>
             {cloudStatus && (
-              <p className="mt-1 text-[11px] text-emerald-400">
+              <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400">
                 {cloudStatus}
               </p>
             )}
@@ -98,16 +98,16 @@ const SettingsView = ({
         </section>
 
       {/* Share Snapshot Section */}
-      <section className="rounded-2xl border border-indigo-500/30 bg-indigo-900/10 px-6 py-5 shadow-sm">
-        <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-100">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-500/20 text-indigo-400">
+      <section className="rounded-2xl border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50 dark:bg-indigo-900/10 px-6 py-5 shadow-sm">
+        <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-900 dark:text-gray-100">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400">
             <Share2 className="h-4 w-4" />
           </span>
           <span>Share Snapshot</span>
         </h2>
         
         <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="text-xs text-gray-400 space-y-2">
+          <div className="text-xs text-gray-600 dark:text-gray-400 space-y-2">
             <p>Generate a URL containing your current data (excluding images) to share with others.</p>
             
             {/* --- NEW: Checkbox --- */}
@@ -117,10 +117,10 @@ const SettingsView = ({
                   type="checkbox" 
                   checked={isShortenEnabled}
                   onChange={(e) => setIsShortenEnabled(e.target.checked)}
-                  className="peer h-4 w-4 rounded border-gray-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500/50 cursor-pointer"
+                  className="peer h-4 w-4 rounded border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-500 focus:ring-indigo-500/50 cursor-pointer"
                 />
               </div>
-              <span className={`transition-colors ${isShortenEnabled ? 'text-indigo-300' : 'text-gray-500 group-hover:text-gray-400'}`}>
+              <span className={`transition-colors ${isShortenEnabled ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 group-hover:text-gray-400'}`}>
                 Shorten Link (TinyURL)
               </span>
             </label>
@@ -130,10 +130,10 @@ const SettingsView = ({
             type="button"
             onClick={handleShareClick}
             disabled={isGeneratingLink}
-            className={`whitespace-nowrap inline-flex items-center gap-2 rounded-full border border-indigo-500 bg-indigo-500/10 px-4 py-2 text-xs font-medium text-indigo-300 transition-all ${
+            className={`whitespace-nowrap inline-flex items-center gap-2 rounded-full border border-indigo-200 dark:border-indigo-500 bg-white dark:bg-indigo-500/10 px-4 py-2 text-xs font-medium text-indigo-600 dark:text-indigo-300 transition-all ${
               isGeneratingLink 
                 ? 'opacity-50 cursor-not-allowed' 
-                : 'hover:bg-indigo-500 hover:text-white'
+                : 'hover:bg-indigo-50 dark:hover:bg-indigo-500 hover:text-indigo-700 dark:hover:text-white'
             }`}
           >
             <Share2 className={`h-3.5 w-3.5 ${isGeneratingLink ? 'animate-pulse' : ''}`} />
@@ -144,39 +144,39 @@ const SettingsView = ({
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Manual Data Backup */}
-        <section className="rounded-2xl border border-gray-800/60 bg-slate-950/60 px-6 py-5 shadow-sm">
-          <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-100">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-700/40 text-slate-100">
+        <section className="rounded-2xl border border-gray-200 dark:border-gray-800/60 bg-white dark:bg-slate-950/60 px-6 py-5 shadow-sm">
+          <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-900 dark:text-gray-100">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700/40 text-gray-600 dark:text-slate-100">
               <FileText className="h-4 w-4" />
             </span>
             <span>Data Management</span>
           </h2>
 
           <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between rounded-xl border border-gray-800/80 bg-slate-900/60 px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-800/80 bg-gray-50 dark:bg-slate-900/60 px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-gray-100">Export Data</p>
-                <p className="text-xs text-gray-400">Excludes images (Small file).</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Export Data</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Excludes images (Small file).</p>
               </div>
               <button
                 type="button"
                 onClick={onExportData}
-                className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-gray-100 hover:bg-slate-800"
+                className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-slate-800"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span>Export</span>
               </button>
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border border-gray-800/80 bg-slate-900/60 px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-800/80 bg-gray-50 dark:bg-slate-900/60 px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-gray-100">Import File</p>
-                <p className="text-xs text-gray-400">Restores data or images.</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Import File</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Restores data or images.</p>
               </div>
               <button
                 type="button"
                 onClick={handleImportClick}
-                className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-gray-100 hover:bg-slate-800"
+                className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-slate-800"
               >
                 <UploadCloud className="h-3.5 w-3.5" />
                 <span>Select</span>
@@ -193,9 +193,9 @@ const SettingsView = ({
         </section>
 
         {/* Image Archive */}
-        <section className="rounded-2xl border border-gray-800/60 bg-slate-950/60 px-6 py-5 shadow-sm">
-          <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-100">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-700/40 text-slate-100">
+        <section className="rounded-2xl border border-gray-200 dark:border-gray-800/60 bg-white dark:bg-slate-950/60 px-6 py-5 shadow-sm">
+          <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-900 dark:text-gray-100">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-slate-700/40 text-gray-600 dark:text-slate-100">
               <ImageIcon className="h-4 w-4" />
             </span>
             <span>Image Library</span>
@@ -203,30 +203,30 @@ const SettingsView = ({
 
           <div className="mt-4 space-y-3">
             {/* Optimize Button */}
-            <div className="flex items-center justify-between rounded-xl border border-gray-800/80 bg-slate-900/60 px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-800/80 bg-gray-50 dark:bg-slate-900/60 px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-gray-100">Optimize Library</p>
-                <p className="text-xs text-gray-400">Resize all images to 150px.</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Optimize Library</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Resize all images to 150px.</p>
               </div>
               <button
                 type="button"
                 onClick={onOptimizeImages}
-                className="inline-flex items-center gap-2 rounded-full border border-indigo-500/50 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-500/20"
+                className="inline-flex items-center gap-2 rounded-full border border-indigo-200 dark:border-indigo-500/50 bg-indigo-50 dark:bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20"
               >
                 <Zap className="h-3.5 w-3.5" />
                 <span>Run</span>
               </button>
             </div>
 
-            <div className="flex items-center justify-between rounded-xl border border-gray-800/80 bg-slate-900/60 px-4 py-3">
+            <div className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-800/80 bg-gray-50 dark:bg-slate-900/60 px-4 py-3">
               <div>
-                <p className="text-sm font-medium text-gray-100">Export Images</p>
-                <p className="text-xs text-gray-400">Save all product photos.</p>
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Export Images</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Save all product photos.</p>
               </div>
               <button
                 type="button"
                 onClick={onExportImages}
-                className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-gray-100 hover:bg-slate-800"
+                className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-slate-800"
               >
                 <Download className="h-3.5 w-3.5" />
                 <span>Export</span>
@@ -244,17 +244,17 @@ const SettingsView = ({
 
       {/* Maintenance & Vendors */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border border-red-900/30 bg-red-950/10 px-6 py-4 shadow-sm">
+        <section className="rounded-2xl border border-red-200 dark:border-red-900/30 bg-red-50 dark:bg-red-950/10 px-6 py-4 shadow-sm">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-900/20 text-red-400">
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400">
                 <Trash2 className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                   Data Maintenance
                 </h3>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Clear out old history to reduce file size.
                 </p>
               </div>
@@ -264,7 +264,7 @@ const SettingsView = ({
               <select
                 value={pruneMonths}
                 onChange={(e) => setPruneMonths(Number(e.target.value))}
-                className="bg-slate-900 border border-slate-700 text-xs text-white rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-red-500 outline-none"
+                className="bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 text-xs text-gray-900 dark:text-white rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-red-500 outline-none"
               >
                 <option value={6}>Older than 6 Months</option>
                 <option value={12}>Older than 1 Year</option>
@@ -275,7 +275,7 @@ const SettingsView = ({
               <button
                 type="button"
                 onClick={() => onPruneData && onPruneData(pruneMonths)} 
-                className="inline-flex items-center gap-2 rounded-full border border-red-800/50 bg-red-900/20 px-4 py-1.5 text-xs font-medium text-red-200 hover:bg-red-900/40 hover:text-white transition-colors"
+                className="inline-flex items-center gap-2 rounded-full border border-red-200 dark:border-red-800/50 bg-white dark:bg-red-900/20 px-4 py-1.5 text-xs font-medium text-red-600 dark:text-red-200 hover:bg-red-50 dark:hover:bg-red-900/40 hover:text-red-700 dark:hover:text-white transition-colors"
               >
                 Run Cleanup
               </button>
@@ -283,17 +283,17 @@ const SettingsView = ({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-gray-800/60 bg-slate-950/60 px-6 py-4 shadow-sm">
+        <section className="rounded-2xl border border-gray-200 dark:border-gray-800/60 bg-white dark:bg-slate-950/60 px-6 py-4 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-slate-100">
+              <div className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-slate-100">
                 <Users className="h-4 w-4" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                   Vendor Management
                 </h3>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Add, edit, or remove vendor contact details.
                 </p>
               </div>
@@ -301,7 +301,7 @@ const SettingsView = ({
             <button
               type="button"
               onClick={onOpenVendors}
-              className="inline-flex items-center gap-2 rounded-full border border-gray-600 bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-gray-100 hover:bg-slate-800"
+              className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-slate-900/80 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-slate-800"
             >
               Manage
             </button>

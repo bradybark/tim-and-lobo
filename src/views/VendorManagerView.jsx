@@ -237,14 +237,14 @@ const VendorManagerView = ({ vendors, updateVendors, onBack }) => {
                   <button
                     type="button"
                     onClick={() => setEditingVendor(v)}
-                    className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400"
+                    className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300"
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => deleteVendor(v.id)}
-                    className="text-red-600 hover:text-red-900 dark:text-red-400"
+                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

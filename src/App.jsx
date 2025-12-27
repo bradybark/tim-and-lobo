@@ -10,17 +10,17 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
   const hasColor = Boolean(themeColor);
 
   return (
-    <div className="h-full w-full max-w-sm rounded-3xl bg-slate-900/70 border border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 transition-transform hover:scale-[1.02] duration-300">
-      <div className="shrink-0 w-32 h-20 rounded-2xl border border-dashed border-slate-600/70 flex items-center justify-center mb-6 bg-slate-900/60">
+    <div className="h-full w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 transition-transform hover:scale-[1.02] duration-300">
+      <div className="shrink-0 w-32 h-20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-600/70 flex items-center justify-center mb-6 bg-slate-50 dark:bg-slate-900/60">
         <Package 
-          className="w-7 h-7" 
-          style={{ color: hasColor ? themeColor : '#cbd5e1' }} 
+          className={`w-7 h-7 ${!hasColor ? 'text-slate-400 dark:text-slate-300' : ''}`} 
+          style={hasColor ? { color: themeColor } : {}} 
         />
       </div>
-      <h2 className="shrink-0 text-lg font-semibold text-slate-50 mb-1 text-center">
+      <h2 className="shrink-0 text-lg font-semibold text-slate-900 dark:text-slate-50 mb-1 text-center">
         {name}
       </h2>
-      <p className="flex-grow text-xs text-slate-400 mb-6 text-center leading-relaxed flex items-center justify-center">
+      <p className="flex-grow text-xs text-slate-500 dark:text-slate-400 mb-6 text-center leading-relaxed flex items-center justify-center">
         {description}
       </p>
       <button
@@ -30,7 +30,7 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
         className={`shrink-0 inline-flex items-center justify-center gap-2 text-xs font-medium px-5 py-2.5 rounded-xl transition-all duration-200 ${
           hasColor
             ? 'text-white hover:brightness-110 hover:shadow-lg shadow-md'
-            : 'bg-slate-100 text-slate-900 hover:bg-white dark:bg-slate-100 dark:text-slate-900'
+            : 'bg-slate-900 text-slate-50 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white'
         }`}
       >
         Open Dashboard

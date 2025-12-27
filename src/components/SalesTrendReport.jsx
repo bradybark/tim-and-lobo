@@ -118,7 +118,7 @@ export function SalesTrendReport({ snapshots, pos }) {
   const renderChart = () => {
     if (filteredData.length < 2) {
       return (
-        <div className="h-64 flex items-center justify-center text-gray-400 text-sm italic border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-700">
+        <div className="h-64 flex items-center justify-center text-gray-400 text-sm italic border rounded bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-700">
           Not enough data points in this range to graph.
         </div>
       );
@@ -226,18 +226,18 @@ export function SalesTrendReport({ snapshots, pos }) {
   };
 
   return (
-    <div className="rounded-2xl border border-gray-800/60 bg-slate-950/60 shadow-sm">
+    <div className="rounded-2xl border border-gray-200 dark:border-gray-800/60 bg-white dark:bg-slate-950/60 shadow-sm">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className="flex w-full items-center justify-between px-6 py-4 text-left"
       >
         <div className="flex items-center gap-3">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-slate-100">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-100">
             <LineChart className="h-4 w-4" />
           </span>
           <div>
-            <p className="text-sm font-semibold text-gray-100">
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               SKU Sales Trend Analysis
             </p>
           </div>
@@ -252,21 +252,21 @@ export function SalesTrendReport({ snapshots, pos }) {
       </button>
 
       {isOpen && (
-        <div className="border-t border-gray-800/80 px-6 pb-6 pt-4 space-y-6">
-          <p className="text-xs text-gray-400">
+        <div className="border-t border-gray-100 dark:border-gray-800/80 px-6 pb-6 pt-4 space-y-6">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             Analyze daily sales rates over time derived from inventory snapshots.
           </p>
 
           {/* Controls */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                 Select SKU
               </label>
               <select
                 value={selectedSku}
                 onChange={(e) => setSelectedSku(e.target.value)}
-                className="w-full bg-slate-900 border border-gray-700 text-white text-sm rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
                 {uniqueSkus.map((sku) => (
                   <option key={sku} value={sku}>
@@ -277,13 +277,13 @@ export function SalesTrendReport({ snapshots, pos }) {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1">
+              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
                 Timeframe
               </label>
               <select
                 value={timeframe}
                 onChange={(e) => setTimeframe(e.target.value)}
-                className="w-full bg-slate-900 border border-gray-700 text-white text-sm rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-white dark:bg-slate-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white text-sm rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500"
               >
                 {TIME_RANGES.map((r) => (
                   <option key={r.value} value={r.value}>
@@ -296,23 +296,23 @@ export function SalesTrendReport({ snapshots, pos }) {
 
           {/* Custom Date Pickers */}
           {timeframe === 'custom' && (
-            <div className="flex flex-wrap gap-4 items-end bg-slate-900/50 p-3 rounded-md border border-gray-800">
+            <div className="flex flex-wrap gap-4 items-end bg-gray-50 dark:bg-slate-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-800">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">Start Date</label>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Start Date</label>
                 <input
                   type="date"
                   value={customStart}
                   onChange={(e) => setCustomStart(e.target.value)}
-                  className="bg-gray-800 border border-gray-600 text-white text-sm rounded p-1"
+                  className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded p-1"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">End Date</label>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">End Date</label>
                 <input
                   type="date"
                   value={customEnd}
                   onChange={(e) => setCustomEnd(e.target.value)}
-                  className="bg-gray-800 border border-gray-600 text-white text-sm rounded p-1"
+                  className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white text-sm rounded p-1"
                 />
               </div>
             </div>
@@ -320,25 +320,25 @@ export function SalesTrendReport({ snapshots, pos }) {
 
           {/* Summary Box */}
           <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-              <div className="text-xs text-indigo-300 uppercase font-semibold">
+            <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20">
+              <div className="text-xs text-indigo-600 dark:text-indigo-300 uppercase font-semibold">
                 Total Units Sold
               </div>
-              <div className="text-2xl font-bold text-indigo-400 mt-1">
+              <div className="text-2xl font-bold text-indigo-700 dark:text-indigo-400 mt-1">
                 {summary.totalSold.toLocaleString()}
               </div>
-              <div className="text-[10px] text-indigo-300/60 mt-1">
+              <div className="text-[10px] text-indigo-400 dark:text-indigo-300/60 mt-1">
                 in selected period
               </div>
             </div>
-            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-              <div className="text-xs text-emerald-300 uppercase font-semibold">
+            <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+              <div className="text-xs text-emerald-600 dark:text-emerald-300 uppercase font-semibold">
                 Avg Daily Rate
               </div>
-              <div className="text-2xl font-bold text-emerald-400 mt-1">
+              <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 mt-1">
                 {summary.avgRate.toFixed(2)}
               </div>
-              <div className="text-[10px] text-emerald-300/60 mt-1">
+              <div className="text-[10px] text-emerald-400 dark:text-emerald-300/60 mt-1">
                 units / day
               </div>
             </div>
@@ -346,7 +346,7 @@ export function SalesTrendReport({ snapshots, pos }) {
 
           {/* Chart Area */}
           <div className="mt-4">
-            <h4 className="text-sm font-medium text-gray-300 mb-3 ml-1">
+            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 ml-1">
               Sales Velocity Trend (Units/Day)
             </h4>
             {renderChart()}
