@@ -26,7 +26,7 @@
 * **Smart Cloud Sync:**
     * Links to a local file (e.g., inside your Google Drive/Dropbox folder) to sync data across devices.
     * **Sync Safety:** Prevents closing the tab while data is syncing to avoid corruption.
-* **Secure Access:** Application access is protected via **SHA-256** password hashing.
+* **Snapshot Sharing:** Generate instant, read-only URL links of your current dashboard state to share with others. Includes built-in support for link shortening.
 
 ## ⚙️ Configuration
 
@@ -55,11 +55,6 @@ VITE_ORG_CONFIG='[
   }
 ]'
 ```
-### 2. Set Access Password
-Generate a SHA-256 hash of your desired password and set it here.
-```
-VITE_APP_PASSWORD=your_sha256_hash_here
-```
 
 ## 🛠 Tech Stack
 
@@ -68,6 +63,7 @@ VITE_APP_PASSWORD=your_sha256_hash_here
 * **Storage:** IndexedDB (via `idb-keyval`)
 * **File System:** File System Access API (native browser file picker)
 * **Exporting:** XLSX (SheetJS/ExcelJS) for comprehensive reporting
+* **Sharing:** lz-string (URL compression)
 
 ## 💾 Data & Storage Guide
 
@@ -91,4 +87,3 @@ To back up your data or share it between a laptop and desktop:
 ## ⚠️ Important Notes
 
 * **Browser Compatibility:** For the best experience (especially image uploading and Cloud Sync), use **Google Chrome** or **Microsoft Edge**.
-* **Security:** Ensure your `.env` file is updated with the SHA-256 hash of your desired password (`VITE_APP_PASSWORD`).
