@@ -4,7 +4,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { VendorCell } from '../components/VendorCell';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
-import { SkuImage } from '../components/SkuImage'; // Import added
+import { SkuImage } from '../components/SkuImage';
 
 const formatDate = (dateLike) => {
   if (!dateLike) return '-';
@@ -158,23 +158,23 @@ const POView = ({
             </thead>
 
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {processedData.map((p) => {
+              {processedData.map((p, index) => {
                   return (
                     <tr
                       key={p.id}
                       className={
                         p.received
-                          ? 'bg-gray-50 dark:bg-gray-900 opacity-75'
-                          : 'bg-white dark:bg-gray-800'
+                          // FIX: Removed opacity-75 to fix stacking context issues with dropdowns
+                          ? 'bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400' 
+                          : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white'
                       }
                     >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {p.poNumber}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
                         <div className="flex items-center">
                           {skuImages[p.sku] && (
-                            /* UPDATED: Using SkuImage component */
                             <SkuImage
                               data={skuImages[p.sku]}
                               className="w-6 h-6 rounded mr-2 object-cover border dark:border-gray-600"
@@ -184,7 +184,11 @@ const POView = ({
                         </div>
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white z-50">
+                      <td 
+                        className="px-6 py-4 whitespace-nowrap text-sm"
+                        // FIX: Descending z-index ensures top rows float above bottom rows
+                        style={{ position: 'relative', zIndex: processedData.length - index + 10 }}
+                      >
                         <VendorCell
                           currentVendor={p.vendor}
                           allVendors={vendors}
@@ -193,13 +197,13 @@ const POView = ({
                         />
                       </td>
 
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {formatDate(p.orderDate)}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-white">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                         {p.qty.toLocaleString()}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
                         {formatDate(p.eta)}
                       </td>
 
