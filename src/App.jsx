@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import CompanyDashboard from './views/CompanyDashboard';
 import { getOrganizationConfig } from './utils/orgConfig';
 import { InventoryProvider } from './context/InventoryContext'; 
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 const OrgCard = ({ name, description, themeColor, onClick }) => {
   const hasColor = Boolean(themeColor);
@@ -67,6 +68,7 @@ function App() {
     return (
       <InventoryProvider orgKey={selectedOrg.id}>
         <Toaster position="top-center" richColors />
+        <PWAInstallPrompt />
         <CompanyDashboard
           initialCompanyName={selectedOrg.name}
           orgKey={selectedOrg.id}
@@ -82,6 +84,7 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
       <Toaster position="top-center" richColors />
+      <PWAInstallPrompt />
 
       <button
         type="button"
