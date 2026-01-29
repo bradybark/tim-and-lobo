@@ -34,24 +34,45 @@ To customize the application, create a `.env` file in the project root:
 
 ### 1. Define Organizations
 You can override the default organizations by providing a JSON string in `VITE_ORG_CONFIG`.
-* **id:** Unique internal ID for the database.
-* **name:** Display name.
-* **description:** Subtitle text on the login card.
-* **themeColor:** Hex code for the dashboard accent color.
 
-```
+| Field         | Description                                                 |
+| ------------- | ----------------------------------------------------------- |
+| `id`          | Unique internal ID for the database                         |
+| `name`        | Display name                                                |
+| `description` | Subtitle text on the login card                             |
+| `themeColor`  | Hex code for the dashboard accent color                     |
+| `features`    | Array of enabled features (see below)                       |
+| `poComponent` | Which PO view to use: `"POView"` or `"PurchaseOrderSystem"` |
+
+**Available Features:**
+| Feature          | Description                     |
+| ---------------- | ------------------------------- |
+| `inventoryLog`   | Inventory Log tab               |
+| `purchaseOrders` | Purchase Orders tab             |
+| `reorderPlanner` | Reorder Planner tab             |
+| `reports`        | Reports tab (inventory section) |
+| `outgoingOrders` | Outgoing Orders section & tab   |
+| `internalOrders` | Internal Orders tab             |
+| `websiteOrders`  | Website Orders tab              |
+
+**Example Configuration:**
+```env
 VITE_ORG_CONFIG='[
   {
     "id": "lobo",
     "name": "Lobo Tool Co.",
-    "description": "Main Inventory",
-    "themeColor": "#3b82f6"
+    "description": "Full inventory management",
+    "themeColor": "#3b82f6",
+    "features": ["inventoryLog", "purchaseOrders", "reorderPlanner", "reports", "outgoingOrders", "internalOrders", "websiteOrders"],
+    "poComponent": "POView"
   },
   {
     "id": "timothy",
     "name": "Timothy Corp",
-    "description": "Spare Parts",
-    "themeColor": "#10b981"
+    "description": "PO tracking only",
+    "themeColor": "#10b981",
+    "features": ["purchaseOrders"],
+    "poComponent": "PurchaseOrderSystem"
   }
 ]'
 ```

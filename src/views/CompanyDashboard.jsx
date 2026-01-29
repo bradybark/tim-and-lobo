@@ -26,6 +26,7 @@ import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
 import {
   exportPlannerExcel, exportFullWorkbook, exportLeadTimeReport, exportJsonBackup
 } from '../utils/export';
+import { hasFeature, getPoComponent } from '../utils/orgConfig';
 import { optimizeImageLibrary } from '../utils/imageOptimizer';
 import { createSnapshotUrl, parseSnapshotFromUrl, shortenUrl } from '../utils/share';
 
@@ -55,14 +56,19 @@ const CompanyDashboard = ({
 }) => {
   const [companyName] = useState(initialCompanyName);
 
-  // Determine tabs based on orgKey
-  const isTimothy = orgKey === 'timothy';
+  // Feature checks based on org config
+  const has = (feature) => hasFeature(orgKey, feature);
+  const poComponentType = getPoComponent(orgKey);
+
+  // Check if any outgoing features are enabled
+  const hasOutgoingSection = has('outgoingOrders') || has('internalOrders') || has('websiteOrders');
 
   // Helper to get initial tab
   const getInitialTab = () => {
-    if (isTimothy) return 'pos';
-    return 'inventory';
-  }
+    if (has('inventoryLog')) return 'inventory';
+    if (has('purchaseOrders')) return 'pos';
+    return 'settings';
+  };
 
   // PARENT TABS: 'inventory' | 'outgoing'
   const [parentTab, setParentTab] = useState('inventory');
@@ -72,13 +78,10 @@ const CompanyDashboard = ({
 
   // Sync state if orgKey changes while mounted (unlikely but safe)
   useEffect(() => {
-    if (isTimothy && activeTab === 'inventory') {
-      setActiveTab('pos');
+    if (!has('inventoryLog') && activeTab === 'inventory') {
+      setActiveTab(has('purchaseOrders') ? 'pos' : 'settings');
     }
-    else if (!isTimothy && activeTab === 'pos') {
-      // Optional: switch back if needed, or keeping 'pos' is fine if consistent
-    }
-  }, [isTimothy]);
+  }, [orgKey]);
 
   // Consume Context
   const {
@@ -184,33 +187,26 @@ const CompanyDashboard = ({
 
   if (!dataLoaded) return <div className="p-10 text-center text-gray-500">Loading database...</div>;
 
+  // Build inventory tabs dynamically based on features
   const inventoryTabs = [
-    { id: 'inventory', label: 'Inventory Log', icon: Package },
-    { id: 'pos', label: 'Purchase Orders', icon: Truck },
-    { id: 'planner', label: 'Reorder Planner', icon: ClipboardList },
-    { id: 'reports', label: 'Reports', icon: BarChart3 },
+    has('inventoryLog') && { id: 'inventory', label: 'Inventory Log', icon: Package },
+    has('purchaseOrders') && { id: 'pos', label: 'Purchase Orders', icon: Truck },
+    has('reorderPlanner') && { id: 'planner', label: 'Reorder Planner', icon: ClipboardList },
+    has('reports') && { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
-  ];
+  ].filter(Boolean);
 
+  // Build outgoing tabs dynamically based on features
   const outgoingTabs = [
-    { id: 'outgoing', label: 'Outgoing Orders', icon: Box },
-    { id: 'internal', label: 'Internal Orders', icon: RefreshCw },
-    { id: 'website', label: 'Website Orders', icon: Globe },
-    { id: 'outgoing-reports', label: 'Reports', icon: BarChart3 },
+    has('outgoingOrders') && { id: 'outgoing', label: 'Outgoing Orders', icon: Box },
+    has('internalOrders') && { id: 'internal', label: 'Internal Orders', icon: RefreshCw },
+    has('websiteOrders') && { id: 'website', label: 'Website Orders', icon: Globe },
+    hasOutgoingSection && { id: 'outgoing-reports', label: 'Reports', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
-  ];
+  ].filter(Boolean);
 
-  const timothyTabs = [
-    { id: 'pos', label: 'Purchase Orders', icon: Truck },
-    { id: 'settings', label: 'Settings', icon: SettingsIcon },
-  ];
-
-  let currentTabs;
-  if (isTimothy) {
-    currentTabs = timothyTabs;
-  } else {
-    currentTabs = parentTab === 'inventory' ? inventoryTabs : outgoingTabs;
-  }
+  // Select current tabs based on parent tab
+  const currentTabs = hasOutgoingSection && parentTab === 'outgoing' ? outgoingTabs : inventoryTabs;
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
@@ -235,10 +231,10 @@ const CompanyDashboard = ({
           </button>
         </header>
 
-        {!isTimothy && (
+        {hasOutgoingSection && (
           <div className="flex p-1 space-x-1 bg-gray-200 dark:bg-gray-800 rounded-xl w-fit">
-            <button onClick={() => { setParentTab('inventory'); setActiveTab('inventory'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'inventory' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Inventory</button>
-            <button onClick={() => { setParentTab('outgoing'); setActiveTab('outgoing'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'outgoing' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Outgoing Orders</button>
+            <button onClick={() => { setParentTab('inventory'); setActiveTab(has('inventoryLog') ? 'inventory' : 'pos'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'inventory' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Inventory</button>
+            <button onClick={() => { setParentTab('outgoing'); setActiveTab(has('outgoingOrders') ? 'outgoing' : 'internal'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'outgoing' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Outgoing Orders</button>
           </div>
         )}
 
@@ -267,20 +263,20 @@ const CompanyDashboard = ({
         )}
 
         <main className="mt-4 relative z-0">
-          {parentTab === 'inventory' && activeTab === 'planner' && !isTimothy && <PlannerView plannerData={plannerData} skuImages={skuImages} handleImageUpload={handleImageUpload} updateSkuSetting={updateSkuSetting} handleExportExcel={handleExportExcelAction} handleExportAll={handleExportAllAction} rateParams={rateParams} setRateParams={setRateParams} />}
-          {parentTab === 'inventory' && activeTab === 'inventory' && !isTimothy && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} />}
-          {((parentTab === 'inventory' && activeTab === 'pos') || (isTimothy && activeTab === 'pos')) && (
-            orgKey === 'timothy'
+          {parentTab === 'inventory' && activeTab === 'planner' && has('reorderPlanner') && <PlannerView plannerData={plannerData} skuImages={skuImages} handleImageUpload={handleImageUpload} updateSkuSetting={updateSkuSetting} handleExportExcel={handleExportExcelAction} handleExportAll={handleExportAllAction} rateParams={rateParams} setRateParams={setRateParams} />}
+          {parentTab === 'inventory' && activeTab === 'inventory' && has('inventoryLog') && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} />}
+          {activeTab === 'pos' && has('purchaseOrders') && (
+            poComponentType === 'PurchaseOrderSystem'
               ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} skuImages={skuImages} poBackupHandle={poBackupHandle} invoiceBackupHandle={invoiceBackupHandle} myCompany={myCompany} companyLogo={companyLogo} />
               : <POView pos={pos} handleAddPO={handleAddPO} toggleReceivePO={toggleReceivePO} updateReceivedDate={updateReceivedDate} deletePO={deletePO} skuImages={skuImages} vendors={vendors} updatePOVendor={updatePOVendor} addVendor={addVendor} />
           )}
           {parentTab === 'inventory' && activeTab === 'vendors' && <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />}
-          {parentTab === 'inventory' && activeTab === 'reports' && !isTimothy && <ReportsView leadTimeStats={leadTimeStats} onExportLeadTimeReport={handleExportLeadTimeAction} snapshots={snapshots} pos={pos} />}
+          {parentTab === 'inventory' && activeTab === 'reports' && has('reports') && <ReportsView leadTimeStats={leadTimeStats} onExportLeadTimeReport={handleExportLeadTimeAction} snapshots={snapshots} pos={pos} />}
 
-          {parentTab === 'outgoing' && activeTab === 'outgoing' && !isTimothy && <OutgoingOrdersView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} customers={customers} cogs={cogs} settings={settings} companyLogo={companyLogo} />}
-          {parentTab === 'outgoing' && activeTab === 'internal' && !isTimothy && <InternalOrdersView internalOrders={internalOrders} setInternalOrders={setInternalOrders} invoices={invoices} setInvoices={setInvoices} customers={customers} cogs={cogs} settings={settings} />}
-          {parentTab === 'outgoing' && activeTab === 'website' && !isTimothy && <WebsiteOrdersView websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} cogs={cogs} websitePrices={websitePrices} settings={settings} />}
-          {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && !isTimothy && <OutgoingReportsView outgoingOrders={outgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} customers={customers} settings={settings} />}
+          {parentTab === 'outgoing' && activeTab === 'outgoing' && has('outgoingOrders') && <OutgoingOrdersView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} customers={customers} cogs={cogs} settings={settings} companyLogo={companyLogo} />}
+          {parentTab === 'outgoing' && activeTab === 'internal' && has('internalOrders') && <InternalOrdersView internalOrders={internalOrders} setInternalOrders={setInternalOrders} invoices={invoices} setInvoices={setInvoices} customers={customers} cogs={cogs} settings={settings} />}
+          {parentTab === 'outgoing' && activeTab === 'website' && has('websiteOrders') && <WebsiteOrdersView websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} cogs={cogs} websitePrices={websitePrices} settings={settings} />}
+          {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && hasOutgoingSection && <OutgoingReportsView outgoingOrders={outgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} customers={customers} settings={settings} />}
 
 
           {activeTab === 'settings' && (
