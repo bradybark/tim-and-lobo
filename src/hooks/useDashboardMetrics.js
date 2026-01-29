@@ -8,7 +8,7 @@ const MILLIS_PER_DAY = 24 * 60 * 60 * 1000;
 const findClosestSnapshot = (snapshots, targetDate) => {
   if (!snapshots || snapshots.length === 0) return null;
   const target = new Date(targetDate).getTime();
-  
+
   return snapshots.reduce((prev, curr) => {
     const prevDiff = Math.abs(new Date(prev.date).getTime() - target);
     const currDiff = Math.abs(new Date(curr.date).getTime() - target);
@@ -21,6 +21,25 @@ export function useDashboardMetrics({ snapshots, pos, settings, rateParams }) {
 
   // 1. Planner Calculations (Optimized)
   const plannerData = useMemo(() => {
+    // Normalize POS: Handle both flat (legacy) and document-based (new) PO structures
+    const normalizedPos = pos.flatMap(p => {
+      if (p.items && Array.isArray(p.items)) {
+        // New Document Structure
+        const isReceived = p.status === 'Received' || p.status === 'Paid';
+        return p.items.map(item => ({
+          ...item,
+          id: item.id || `${p.id}-${item.sku}`, // Ensure unique ID
+          poId: p.id,
+          orderDate: p.orderDate,
+          received: isReceived,
+          receivedDate: p.receivedDate, // Needs to be captured in PO doc
+          eta: p.eta, // Capture ETA in PO doc if needed
+          vendor: p.vendorId // or resolve name if needed
+        }));
+      }
+      return p;
+    });
+
     // A. Pre-group data by SKU (O(N))
     const snapshotsBySku = {};
     snapshots.forEach((s) => {
@@ -29,7 +48,7 @@ export function useDashboardMetrics({ snapshots, pos, settings, rateParams }) {
     });
 
     const posBySku = {};
-    pos.forEach((p) => {
+    normalizedPos.forEach((p) => {
       if (!posBySku[p.sku]) posBySku[p.sku] = [];
       posBySku[p.sku].push(p);
     });
@@ -53,8 +72,8 @@ export function useDashboardMetrics({ snapshots, pos, settings, rateParams }) {
         (a, b) => new Date(b.date) - new Date(a.date)
       );
       const skuPos = posBySku[sku] || [];
-      
-      const currentSnap = skuSnaps[0]; 
+
+      const currentSnap = skuSnaps[0];
       const currentInv = currentSnap ? currentSnap.qty : 0;
 
       // --- RATE CALCULATION LOGIC ---
@@ -81,8 +100,8 @@ export function useDashboardMetrics({ snapshots, pos, settings, rateParams }) {
             if (rateParams.timeframe === '3m') targetDate.setMonth(today.getMonth() - 3);
             if (rateParams.timeframe === '6m') targetDate.setMonth(today.getMonth() - 6);
             if (rateParams.timeframe === '1y') targetDate.setFullYear(today.getFullYear() - 1);
-            endSnap = findClosestSnapshot(skuSnaps, targetDate); 
-            startSnap = skuSnaps[0]; 
+            endSnap = findClosestSnapshot(skuSnaps, targetDate);
+            startSnap = skuSnaps[0];
             usedPeriodLabel = rateParams.timeframe;
           }
         }
@@ -130,7 +149,7 @@ export function useDashboardMetrics({ snapshots, pos, settings, rateParams }) {
 
       const daysToZero = dailyRate > 0 ? currentInv / dailyRate : Infinity;
       const zeroDate = dailyRate > 0 ? addDays(today, Math.round(daysToZero)) : null;
-      
+
       const reorderTriggerLevel = dailyRate * (leadTimeDays + minDays);
       const targetUnitLevel = dailyRate * (leadTimeDays + minDays + targetDays);
       const reorderQty = Math.max(0, targetUnitLevel - (currentInv + onOrder));
@@ -161,11 +180,11 @@ export function useDashboardMetrics({ snapshots, pos, settings, rateParams }) {
         usedPeriodLabel,
       };
     })
-    .sort((a, b) => {
-      if (a.needsAction && !b.needsAction) return -1;
-      if (!a.needsAction && b.needsAction) return 1;
-      return a.sku.localeCompare(b.sku);
-    });
+      .sort((a, b) => {
+        if (a.needsAction && !b.needsAction) return -1;
+        if (!a.needsAction && b.needsAction) return 1;
+        return a.sku.localeCompare(b.sku);
+      });
   }, [snapshots, pos, settings, rateParams]);
 
   // 2. Lead Time Stats (Unchanged logic, just ensure consistency)

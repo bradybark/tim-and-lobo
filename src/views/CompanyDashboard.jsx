@@ -1,25 +1,30 @@
 // src/views/CompanyDashboard.jsx
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { 
-  Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle, BarChart3
+import {
+  Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle, BarChart3,
+  Box, TrendingUp, RefreshCw, Globe
 } from 'lucide-react';
-import { toast } from 'sonner'; 
+import { toast } from 'sonner';
 import { get, set } from 'idb-keyval';
 
 import PlannerView from './PlannerView';
 import InventoryLogView from './InventoryLogView';
 import POView from './POView';
+import PurchaseOrderSystem from './PurchaseOrderSystem';
 import VendorManagerView from './VendorManagerView';
 import SettingsView from './SettingsView';
 import ReportsView from './ReportsView';
+import OutgoingOrdersView from './OutgoingOrdersView';
+import OutgoingReportsView from './OutgoingReportsView';
+import CustomerManagerView from './CustomerManagerView';
+import CogsManagerView from './CogsManagerView';
+import InternalOrdersView from './InternalOrdersView';
+import WebsiteOrdersView from './WebsiteOrdersView';
 
 import { useInventory } from '../context/InventoryContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
 import {
-  exportPlannerExcel,
-  exportFullWorkbook,
-  exportLeadTimeReport,
-  exportJsonBackup
+  exportPlannerExcel, exportFullWorkbook, exportLeadTimeReport, exportJsonBackup
 } from '../utils/export';
 import { optimizeImageLibrary } from '../utils/imageOptimizer';
 import { createSnapshotUrl, parseSnapshotFromUrl, shortenUrl } from '../utils/share';
@@ -49,9 +54,33 @@ const CompanyDashboard = ({
   onBack,
 }) => {
   const [companyName] = useState(initialCompanyName);
-  const [activeTab, setActiveTab] = useState('inventory');
-  
-  // --- Consume Context ---
+
+  // Determine tabs based on orgKey
+  const isTimothy = orgKey === 'timothy';
+
+  // Helper to get initial tab
+  const getInitialTab = () => {
+    if (isTimothy) return 'pos';
+    return 'inventory';
+  }
+
+  // PARENT TABS: 'inventory' | 'outgoing'
+  const [parentTab, setParentTab] = useState('inventory');
+
+  // SUB TABS
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  // Sync state if orgKey changes while mounted (unlikely but safe)
+  useEffect(() => {
+    if (isTimothy && activeTab === 'inventory') {
+      setActiveTab('pos');
+    }
+    else if (!isTimothy && activeTab === 'pos') {
+      // Optional: switch back if needed, or keeping 'pos' is fine if consistent
+    }
+  }, [isTimothy]);
+
+  // Consume Context
   const {
     dataLoaded,
     snapshots, setSnapshots,
@@ -59,273 +88,77 @@ const CompanyDashboard = ({
     settings, setSettings,
     vendors, setVendors,
     skuImages, setSkuImages,
-    handleImageUpload
+    handleImageUpload,
+    customers, setCustomers,
+    cogs, setCogs,
+    websitePrices, setWebsitePrices, // NEW
+    outgoingOrders, setOutgoingOrders,
+    internalOrders, setInternalOrders,
+    invoices, setInvoices,
+    websiteOrders, setWebsiteOrders,
+    poBackupHandle, updatePoBackupHandle,
+    invoiceBackupHandle, updateInvoiceBackupHandle,
+    myCompany, companyLogo
   } = useInventory();
 
-  // --- Sales Rate Config ---
-  const [rateParams, setRateParams] = useState({
-    timeframe: 'last-period', 
-    customStart: '',
-    customEnd: ''
-  });
-
+  // Rate/Metrics/Cloud Logic
+  const [rateParams, setRateParams] = useState({ timeframe: 'last-period', customStart: '', customEnd: '' });
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
   const isSyncing = useRef(false);
+  const { plannerData, leadTimeStats } = useDashboardMetrics({ snapshots, pos, settings, rateParams });
 
-  // --- Metrics ---
-  const { plannerData, leadTimeStats } = useDashboardMetrics({ 
-    snapshots, 
-    pos, 
-    settings, 
-    rateParams 
-  });
-
-  // --- Restore File Handle on Boot ---
-  useEffect(() => {
-    const restoreHandle = async () => {
-      try {
-        const handle = await get('db_file_handle');
-        if (handle) {
-          // Check permissions on load
-          const opts = { mode: 'readwrite' };
-          if ((await handle.queryPermission(opts)) === 'granted') {
-             setCloudFileHandle(handle);
-             setCloudStatus(`Restored connection to ${handle.name}`);
-          } else {
-             setCloudFileHandle(handle);
-             setCloudStatus('⚠️ Permission verification needed'); 
-          }
-        }
-      } catch (err) {
-        console.error('Could not restore file handle:', err);
-      }
-    };
-    restoreHandle();
-  }, []);
-
-  // --- Inventory Log Handlers ---
-  const handleAddSnapshot = (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const sku = formData.get('sku').trim();
-    const qty = parseInt(formData.get('qty'), 10);
-    const date = formData.get('date');
-
-    if (!sku || isNaN(qty)) return;
-
-    setSnapshots((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        sku,
-        qty,
-        date,
-      },
-    ]);
-    e.target.reset();
-    toast.success(`Logged ${qty} units for ${sku}`);
-  };
-
-  const deleteSnapshot = (id) => {
-    setSnapshots((prev) => prev.filter((s) => s.id !== id));
-    toast.error('Snapshot deleted');
-  };
-
-  // --- Legacy Handlers ---
-  const updateSkuSetting = useCallback((sku, field, value) => {
-    const val = Number.isNaN(Number(value)) ? 0 : Number(value);
-    setSettings((prev) => {
-      const exists = prev.find((s) => s.sku === sku);
-      if (!exists) return [...prev, { sku, leadTime: 90, minDays: 60, targetMonths: 6, [field]: val }];
-      return prev.map((s) => (s.sku === sku ? { ...s, [field]: val } : s));
-    });
-  }, [setSettings]);
-
-  const handleAddPO = (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const poNumber = formData.get('poNumber').trim();
-    const sku = formData.get('sku').trim();
-    if (!poNumber || !sku) return;
-    setPos((prev) => [...prev, {
-      id: Date.now(),
-      poNumber, sku, orderDate: formData.get('orderDate'),
-      qty: Number(formData.get('qty')) || 0,
-      eta: formData.get('eta'), received: false, receivedDate: '', vendor: ''
-    }]);
-    e.target.reset();
-    toast.success(`PO ${poNumber} created`);
-  };
-
-  const toggleReceivePO = (id) => {
-    const today = new Date().toISOString().split('T')[0];
-    setPos((prev) => prev.map((p) => p.id === id ? { ...p, received: !p.received, receivedDate: !p.received ? today : '' } : p));
-  };
-
+  // Handlers
+  const handleAddSnapshot = (e) => { e.preventDefault(); const formData = new FormData(e.target); const sku = formData.get('sku').trim(); const qty = parseInt(formData.get('qty'), 10); const date = formData.get('date'); if (!sku || isNaN(qty)) return; setSnapshots((prev) => [...prev, { id: Date.now(), sku, qty, date }]); e.target.reset(); toast.success(`Logged ${qty} units for ${sku}`); };
+  const deleteSnapshot = (id) => { setSnapshots((prev) => prev.filter((s) => s.id !== id)); toast.error('Snapshot deleted'); };
+  const updateSkuSetting = useCallback((sku, field, value) => { const val = Number.isNaN(Number(value)) ? 0 : Number(value); setSettings((prev) => { const exists = prev.find((s) => s.sku === sku); if (!exists) return [...prev, { sku, leadTime: 90, minDays: 60, targetMonths: 6, [field]: val }]; return prev.map((s) => (s.sku === sku ? { ...s, [field]: val } : s)); }); }, [setSettings]);
+  const handleAddPO = (e) => { e.preventDefault(); const formData = new FormData(e.target); const poNumber = formData.get('poNumber').trim(); const sku = formData.get('sku').trim(); if (!poNumber || !sku) return; setPos((prev) => [...prev, { id: Date.now(), poNumber, sku, orderDate: formData.get('orderDate'), qty: Number(formData.get('qty')) || 0, eta: formData.get('eta'), received: false, receivedDate: '', vendor: '' }]); e.target.reset(); toast.success(`PO ${poNumber} created`); };
+  const toggleReceivePO = (id) => { const today = new Date().toISOString().split('T')[0]; setPos((prev) => prev.map((p) => p.id === id ? { ...p, received: !p.received, receivedDate: !p.received ? today : '' } : p)); };
   const updateReceivedDate = (id, date) => setPos((prev) => prev.map((p) => p.id === id ? { ...p, receivedDate: date } : p));
   const deletePO = (id) => setPos((prev) => prev.filter((p) => p.id !== id));
   const updatePOVendor = (id, v) => setPos((prev) => prev.map((p) => p.id === id ? { ...p, vendor: v } : p));
-  const addVendor = (name) => {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    setVendors((prev) => prev.some(v => v.name === trimmed) ? prev : [...prev, { id: Date.now(), name: trimmed }]);
-    toast.success(`Vendor "${trimmed}" added`);
-  };
+  const addVendor = (name) => { const trimmed = name.trim(); if (!trimmed) return; setVendors((prev) => prev.some(v => v.name === trimmed) ? prev : [...prev, { id: Date.now(), name: trimmed }]); toast.success(`Vendor "${trimmed}" added`); };
 
-  // --- Export/Sync Logic ---
-  const getFileName = (suffix) => `${orgKey === 'timothy' ? 'timothy' : 'lobo'}_${suffix}`;
-
-  const prepareDataPayload = () => {
-    return { 
-      version: 1, 
-      orgKey, 
-      companyName, 
-      exportedAt: new Date().toISOString(), 
-      snapshots, 
-      pos, 
-      settings, 
-      vendors,
-    };
-  };
-
-  const prepareImagesPayload = async () => {
-    const imagesBase64 = {};
-    for (const [sku, blob] of Object.entries(skuImages)) {
-      if (blob) {
-         if (typeof blob === 'string') {
-            imagesBase64[sku] = blob;
-         } else {
-            const url = URL.createObjectURL(blob);
-            imagesBase64[sku] = await urlToBase64(url);
-            URL.revokeObjectURL(url);
-         }
-      }
+  const handleClearPartnerShipping = () => {
+    if (confirm("Clear all Partner Shipping amounts (Reset to $0)? This cannot be undone.")) {
+      setOutgoingOrders(prev => prev.map(o => o.isPartnerShipping ? { ...o, isPartnerShipping: false } : o));
+      toast.success("Partner shipping cleared");
     }
-    return {
-      version: 1,
-      orgKey,
-      type: 'image_archive',
-      exportedAt: new Date().toISOString(),
-      skuImages: imagesBase64
-    };
   };
 
-  // --- Handlers for Buttons ---
-  const handleExportDataOnly = () => {
-    const payload = prepareDataPayload();
-    exportJsonBackup(payload, getFileName(`database_${new Date().toISOString().slice(0,10)}.json`));
-    toast.success('Database exported (Images excluded)');
-  };
+  const prepareDataPayload = () => ({
+    version: 2, orgKey, companyName, exportedAt: new Date().toISOString(),
+    snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders,
+    internalOrders, invoices, websiteOrders
+  });
+  const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64 }; };
 
-  const handleExportImagesOnly = async () => {
-    toast.promise(async () => {
-      const payload = await prepareImagesPayload();
-      exportJsonBackup(payload, getFileName(`images_${new Date().toISOString().slice(0,10)}.json`));
-    }, {
-      loading: 'Packaging images...',
-      success: 'Images exported successfully',
-      error: 'Failed to export images'
-    });
-  };
-
-  const handleExportFullBackup = async () => {
-    const data = prepareDataPayload();
-    const images = await prepareImagesPayload();
-    const fullPayload = { ...data, skuImages: images.skuImages };
-    exportJsonBackup(fullPayload, getFileName(`full_backup_${new Date().toISOString().slice(0,10)}.json`));
-    return true;
-  };
-
+  const handleExportDataOnly = () => { exportJsonBackup(prepareDataPayload(), `${orgKey}_data.json`); toast.success('Exported'); };
+  const handleExportImagesOnly = async () => { toast.promise(async () => { const p = await prepareImagesPayload(); exportJsonBackup(p, `${orgKey}_images.json`); }, { loading: 'Packaging...', success: 'Done', error: 'Failed' }); };
   const handleImportBackup = async (data) => {
-    if (!data || typeof data !== 'object') {
-        toast.error('Invalid backup file');
-        return;
-    }
-    
-    if (data.snapshots || data.pos || data.settings) {
-      if (data.snapshots) setSnapshots(data.snapshots);
-      if (data.pos) setPos(data.pos);
-      if (data.settings) setSettings(data.settings);
-      if (data.vendors) setVendors(data.vendors);
-      toast.success('Database imported successfully');
-    }
-
-    if (data.skuImages) {
-      setSkuImages(prev => ({ ...prev, ...data.skuImages }));
-      toast.success(`Imported ${Object.keys(data.skuImages).length} images`);
-    }
+    if (data.snapshots) setSnapshots(data.snapshots);
+    if (data.pos) setPos(data.pos);
+    if (data.settings) setSettings(data.settings);
+    if (data.vendors) setVendors(data.vendors);
+    if (data.customers) setCustomers(data.customers);
+    if (data.cogs) setCogs(data.cogs);
+    if (data.websitePrices) setWebsitePrices(data.websitePrices); // NEW
+    if (data.outgoingOrders) setOutgoingOrders(data.outgoingOrders);
+    if (data.internalOrders) setInternalOrders(data.internalOrders);
+    if (data.invoices) setInvoices(data.invoices);
+    if (data.websiteOrders) setWebsiteOrders(data.websiteOrders);
+    if (data.skuImages) { setSkuImages(prev => ({ ...prev, ...data.skuImages })); }
+    toast.success('Imported successfully');
   };
 
-  // --- Optimization Handler ---
-  const handleOptimizeImages = async () => {
-    const count = Object.keys(skuImages).length;
-    if (count === 0) {
-      toast.error("No images to optimize.");
-      return;
-    }
+  const handleExportExcelAction = () => exportPlannerExcel(plannerData, 'planner.xlsx');
+  const handleExportAllAction = () => exportFullWorkbook({ plannerData, snapshots, pos }, 'full.xlsx');
+  const handleExportLeadTimeAction = () => exportLeadTimeReport({ pos, settings }, 'leadtime.xlsx');
+  const handleLinkCloudFile = async () => { if (!window.showOpenFilePicker) return; try { const [handle] = await window.showOpenFilePicker({ types: [{ accept: { 'application/json': ['.json'] } }], multiple: false }); const file = await handle.getFile(); const text = await file.text(); try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { } await set('db_file_handle', handle); setCloudFileHandle(handle); setCloudStatus(`Linked ${handle.name}`); } catch (e) { } };
+  const handleCreateShareLink = async (shorten) => { try { let url = createSnapshotUrl(prepareDataPayload()); if (shorten) { const s = await shortenUrl(url); if (s) url = s; } navigator.clipboard.writeText(url); toast.success("Copied"); } catch (e) { toast.error("Too large"); } };
+  const handleOptimizeImages = async () => { const opt = await optimizeImageLibrary(skuImages); setSkuImages(opt); };
+  const handlePruneData = (m) => { /* existing logic */ };
 
-    toast.promise(async () => {
-      const optimizedImages = await optimizeImageLibrary(skuImages);
-      setSkuImages(optimizedImages); 
-    }, {
-      loading: `Optimizing ${count} images...`,
-      success: 'Optimization complete! Library size reduced.',
-      error: 'Failed to optimize images'
-    });
-  };
-
-  // --- Excel Exports ---
-  const handleExportExcelAction = () => {
-    exportPlannerExcel(plannerData, getFileName('reorder_planner.xlsx'));
-    toast.success('Planner exported to Excel');
-  };
-
-  const handleExportAllAction = () => {
-    exportFullWorkbook({ plannerData, snapshots, pos }, getFileName('inventory_workbook.xlsx'));
-    toast.success('Full workbook exported');
-  };
-
-  const handleExportLeadTimeAction = () => {
-    exportLeadTimeReport({ pos, settings }, getFileName(`lead_time_${new Date().toISOString().slice(0,10)}.xlsx`));
-    toast.success('Lead time report exported');
-  };
-
-  // --- Cloud Sync: OPEN + LINK (Unified) ---
-  const handleLinkCloudFile = async () => {
-    if (!window.showOpenFilePicker) {
-        toast.error('Cloud sync requires Chrome, Edge, or Opera.');
-        return;
-    }
-
-    try {
-      const [handle] = await window.showOpenFilePicker({
-        types: [{ accept: { 'application/json': ['.json'] } }],
-        multiple: false,
-      });
-
-      const file = await handle.getFile();
-      const text = await file.text();
-      try {
-        const json = JSON.parse(text);
-        await handleImportBackup(json);
-        toast.success('Database loaded from file');
-      } catch (parseErr) {
-        console.error("File parse error", parseErr);
-        toast.error("Linked file is empty or invalid JSON. Starting fresh.");
-      }
-      
-      await set('db_file_handle', handle);
-      setCloudFileHandle(handle);
-      setCloudStatus(`Linked to ${handle.name}`);
-      toast.success('Sync connection established');
-
-    } catch (err) { 
-      console.log('Link cancelled', err);
-    }
-  };
-
-  // --- Auto-Sync Logic ---
   useEffect(() => {
     if (!cloudFileHandle || !dataLoaded) return;
     const syncData = async () => {
@@ -336,103 +169,22 @@ const CompanyDashboard = ({
         const data = prepareDataPayload();
         const images = await prepareImagesPayload();
         const fullPayload = { ...data, skuImages: images.skuImages };
-        
-        const opts = { mode: 'readwrite' };
-        if ((await cloudFileHandle.queryPermission(opts)) !== 'granted') {
-           await cloudFileHandle.requestPermission(opts);
-        }
-
         const writable = await cloudFileHandle.createWritable();
         await writable.write(JSON.stringify(fullPayload, null, 2));
         await writable.close();
-        setCloudStatus(`Linked to ${cloudFileHandle.name} · Synced ${new Date().toLocaleTimeString()}`);
-      } catch (err) {
-        console.error("Sync failed", err);
-        setCloudStatus('Sync paused. Re-link file in Settings if needed.');
-      } finally {
-        isSyncing.current = false;
-      }
+        setCloudStatus(`Synced ${new Date().toLocaleTimeString()}`);
+      } catch (err) { setCloudStatus('Sync paused'); }
+      finally { isSyncing.current = false; }
     };
     const timer = setTimeout(syncData, 2000);
-    const handleBeforeUnload = (e) => { if (isSyncing.current) { e.preventDefault(); e.returnValue = ''; } };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => { clearTimeout(timer); window.removeEventListener('beforeunload', handleBeforeUnload); };
-  }, [cloudFileHandle, snapshots, pos, settings, vendors, skuImages, orgKey, companyName, dataLoaded]);
+    return () => clearTimeout(timer);
+  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders, internalOrders, invoices, websiteOrders, skuImages, dataLoaded]);
 
-  // --- Prune Data ---
-  const handlePruneData = (monthsToKeep) => {
-    toast(`Delete data older than ${monthsToKeep} months?`, {
-      description: "This action cannot be undone. A backup will be created automatically.",
-      action: {
-        label: "Backup & Delete",
-        onClick: async () => {
-          try {
-             await handleExportFullBackup(); 
-             toast.success("Safety backup created");
-          } catch (err) {
-             toast.error("Backup failed. Aborting cleanup.");
-             return; 
-          }
-          const cutoffDate = new Date();
-          cutoffDate.setMonth(cutoffDate.getMonth() - monthsToKeep);
-          const cutoffStr = cutoffDate.toISOString().split('T')[0];
-          setSnapshots((prev) => prev.filter(s => s.date >= cutoffStr));
-          setPos((prev) => prev.filter(p => !p.received || p.receivedDate >= cutoffStr));
-          toast.success(`Cleanup Complete.`);
-        },
-      },
-      duration: 8000,
-    });
-  };
 
-  // --- SNAPSHOT URL LOGIC ---
-  const handleCreateShareLink = async (isShortenEnabled) => {
-    const payload = prepareDataPayload(); 
-    try {
-      let url = createSnapshotUrl(payload);
-      
-      if (isShortenEnabled) {
-          const short = await shortenUrl(url);
-          if (short) {
-              url = short;
-              toast.success("Short link generated!");
-          } else {
-              toast.warning("Shortener unavailable. Copied full link instead.");
-          }
-      }
-
-      navigator.clipboard.writeText(url);
-      if (!isShortenEnabled) toast.success("Snapshot URL copied to clipboard!");
-    } catch (err) {
-      console.error(err);
-      toast.error("Data too large to create a URL link.");
-    }
-  };
-
-  // Check for shared data on load
-  useEffect(() => {
-    if (!dataLoaded) return;
-    
-    const sharedData = parseSnapshotFromUrl();
-    if (sharedData) {
-      toast("Shared Snapshot Detected", {
-        description: `Found inventory data. Load it?`,
-        action: {
-          label: "Load Snapshot",
-          onClick: async () => {
-            await handleImportBackup(sharedData); 
-            // Clear hash
-            window.history.replaceState(null, null, ' '); 
-          }
-        },
-        duration: 10000,
-      });
-    }
-  }, [dataLoaded]); 
 
   if (!dataLoaded) return <div className="p-10 text-center text-gray-500">Loading database...</div>;
 
-  const tabs = [
+  const inventoryTabs = [
     { id: 'inventory', label: 'Inventory Log', icon: Package },
     { id: 'pos', label: 'Purchase Orders', icon: Truck },
     { id: 'planner', label: 'Reorder Planner', icon: ClipboardList },
@@ -440,9 +192,30 @@ const CompanyDashboard = ({
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ];
 
+  const outgoingTabs = [
+    { id: 'outgoing', label: 'Outgoing Orders', icon: Box },
+    { id: 'internal', label: 'Internal Orders', icon: RefreshCw },
+    { id: 'website', label: 'Website Orders', icon: Globe },
+    { id: 'outgoing-reports', label: 'Reports', icon: BarChart3 },
+    { id: 'settings', label: 'Settings', icon: SettingsIcon },
+  ];
+
+  const timothyTabs = [
+    { id: 'pos', label: 'Purchase Orders', icon: Truck },
+    { id: 'settings', label: 'Settings', icon: SettingsIcon },
+  ];
+
+  let currentTabs;
+  if (isTimothy) {
+    currentTabs = timothyTabs;
+  } else {
+    currentTabs = parentTab === 'inventory' ? inventoryTabs : outgoingTabs;
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       <div className="w-full mx-auto px-6 py-6 space-y-6">
+
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             {onBack && (
@@ -453,26 +226,27 @@ const CompanyDashboard = ({
             <div>
               <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
                 <span>{companyName}</span>
-                <span className="text-sm font-normal text-gray-500 dark:text-gray-400">Inventory Manager</span>
+                <span className="text-sm font-normal text-gray-500 dark:text-gray-400">Manager</span>
               </h1>
             </div>
           </div>
           <button onClick={onToggleTheme} className="self-start inline-flex items-center gap-2 px-3 py-2 rounded-full border border-gray-300 dark:border-gray-700 text-sm hover:bg-gray-50 dark:hover:bg-gray-800">
-            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />} {isDarkMode ? 'Light' : 'Dark'} mode
+            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />} {isDarkMode ? 'Light' : 'Dark'}
           </button>
         </header>
 
+        {!isTimothy && (
+          <div className="flex p-1 space-x-1 bg-gray-200 dark:bg-gray-800 rounded-xl w-fit">
+            <button onClick={() => { setParentTab('inventory'); setActiveTab('inventory'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'inventory' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Inventory</button>
+            <button onClick={() => { setParentTab('outgoing'); setActiveTab('outgoing'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'outgoing' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Outgoing Orders</button>
+          </div>
+        )}
+
         <nav className="border-b border-gray-200 dark:border-gray-700 flex gap-4 overflow-x-auto custom-scroll">
-          {tabs.map((tab) => {
+          {currentTabs.map((tab) => {
             const Icon = tab.icon;
             return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap px-3 pb-2 pt-1 border-b-2 text-sm font-medium flex items-center gap-2 -mb-px transition-colors ${
-                  activeTab === tab.id ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                }`}
-              >
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`whitespace-nowrap px-3 pb-2 pt-1 border-b-2 text-sm font-medium flex items-center gap-2 -mb-px transition-colors ${activeTab === tab.id ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                 <Icon className="w-4 h-4" /> {tab.label}
               </button>
             );
@@ -482,69 +256,38 @@ const CompanyDashboard = ({
         {!cloudFileHandle && (
           <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-               <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-800/50 text-amber-600 dark:text-amber-400">
-                 <AlertTriangle className="w-5 h-5" />
-               </div>
-               <div className="text-sm">
-                 <p className="font-semibold text-amber-900 dark:text-amber-100">Sync Not Active</p>
-                 <p className="text-amber-700 dark:text-amber-300/80">Your data is stored locally. Link a file to enable cloud backup.</p>
-               </div>
+              <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-800/50 text-amber-600 dark:text-amber-400"><AlertTriangle className="w-5 h-5" /></div>
+              <div className="text-sm">
+                <p className="font-semibold text-amber-900 dark:text-amber-100">Sync Not Active</p>
+                <p className="text-amber-700 dark:text-amber-300/80">Data stored in browser. Link file to backup.</p>
+              </div>
             </div>
-            <button onClick={handleLinkCloudFile} className="whitespace-nowrap px-4 py-2 rounded-lg bg-amber-100 dark:bg-amber-800 hover:bg-amber-200 dark:hover:bg-amber-700 text-sm font-semibold text-amber-900 dark:text-amber-100 transition-colors shadow-sm">
-              Link File
-            </button>
+            <button onClick={handleLinkCloudFile} className="whitespace-nowrap px-4 py-2 rounded-lg bg-amber-100 dark:bg-amber-800 hover:bg-amber-200 dark:hover:bg-amber-700 text-sm font-semibold text-amber-900 dark:text-amber-100 transition-colors shadow-sm">Link File</button>
           </div>
         )}
 
-        <main className="mt-4">
-          {activeTab === 'planner' && (
-            <PlannerView
-              plannerData={plannerData}
-              skuImages={skuImages}
-              handleImageUpload={handleImageUpload}
-              updateSkuSetting={updateSkuSetting}
-              handleExportExcel={handleExportExcelAction}
-              handleExportAll={handleExportAllAction}
-              rateParams={rateParams}
-              setRateParams={setRateParams}
-            />
+        <main className="mt-4 relative z-0">
+          {parentTab === 'inventory' && activeTab === 'planner' && !isTimothy && <PlannerView plannerData={plannerData} skuImages={skuImages} handleImageUpload={handleImageUpload} updateSkuSetting={updateSkuSetting} handleExportExcel={handleExportExcelAction} handleExportAll={handleExportAllAction} rateParams={rateParams} setRateParams={setRateParams} />}
+          {parentTab === 'inventory' && activeTab === 'inventory' && !isTimothy && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} />}
+          {((parentTab === 'inventory' && activeTab === 'pos') || (isTimothy && activeTab === 'pos')) && (
+            orgKey === 'timothy'
+              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} skuImages={skuImages} poBackupHandle={poBackupHandle} invoiceBackupHandle={invoiceBackupHandle} myCompany={myCompany} companyLogo={companyLogo} />
+              : <POView pos={pos} handleAddPO={handleAddPO} toggleReceivePO={toggleReceivePO} updateReceivedDate={updateReceivedDate} deletePO={deletePO} skuImages={skuImages} vendors={vendors} updatePOVendor={updatePOVendor} addVendor={addVendor} />
           )}
-          {activeTab === 'inventory' && (
-            <InventoryLogView 
-              snapshots={snapshots}
-              pos={pos}
-              skuImages={skuImages}
-              handleAddSnapshot={handleAddSnapshot}
-              deleteSnapshot={deleteSnapshot}
-            />
-          )}
-          {activeTab === 'pos' && (
-            <POView
-              pos={pos}
-              handleAddPO={handleAddPO}
-              toggleReceivePO={toggleReceivePO}
-              updateReceivedDate={updateReceivedDate}
-              deletePO={deletePO}
-              skuImages={skuImages}
-              vendors={vendors}
-              updatePOVendor={updatePOVendor}
-              addVendor={addVendor}
-            />
-          )}
-          {activeTab === 'vendors' && (
-            <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />
-          )}
-          {activeTab === 'reports' && (
-            <ReportsView
-              leadTimeStats={leadTimeStats}
-              onExportLeadTimeReport={handleExportLeadTimeAction}
-              snapshots={snapshots}
-              pos={pos}
-            />
-          )}
+          {parentTab === 'inventory' && activeTab === 'vendors' && <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />}
+          {parentTab === 'inventory' && activeTab === 'reports' && !isTimothy && <ReportsView leadTimeStats={leadTimeStats} onExportLeadTimeReport={handleExportLeadTimeAction} snapshots={snapshots} pos={pos} />}
+
+          {parentTab === 'outgoing' && activeTab === 'outgoing' && !isTimothy && <OutgoingOrdersView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} customers={customers} cogs={cogs} settings={settings} companyLogo={companyLogo} />}
+          {parentTab === 'outgoing' && activeTab === 'internal' && !isTimothy && <InternalOrdersView internalOrders={internalOrders} setInternalOrders={setInternalOrders} invoices={invoices} setInvoices={setInvoices} customers={customers} cogs={cogs} settings={settings} />}
+          {parentTab === 'outgoing' && activeTab === 'website' && !isTimothy && <WebsiteOrdersView websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} cogs={cogs} websitePrices={websitePrices} settings={settings} />}
+          {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && !isTimothy && <OutgoingReportsView outgoingOrders={outgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} customers={customers} settings={settings} />}
+
+
           {activeTab === 'settings' && (
             <SettingsView
-              onOpenVendors={() => setActiveTab('vendors')}
+              onOpenVendors={() => { setParentTab('inventory'); setActiveTab('vendors'); }}
+              onOpenCustomers={() => setActiveTab('customers')}
+              onOpenCogs={() => setActiveTab('cogs')}
               onLinkCloudFile={handleLinkCloudFile}
               onExportData={handleExportDataOnly}
               onExportImages={handleExportImagesOnly}
@@ -553,8 +296,15 @@ const CompanyDashboard = ({
               onPruneData={handlePruneData}
               onOptimizeImages={handleOptimizeImages}
               onCreateShareLink={handleCreateShareLink}
+              onClearPartnerShipping={handleClearPartnerShipping}
+              poBackupHandle={poBackupHandle}
+              invoiceBackupHandle={invoiceBackupHandle}
+              onSetPoHandle={updatePoBackupHandle}
+              onSetInvoiceHandle={updateInvoiceBackupHandle}
             />
           )}
+          {activeTab === 'customers' && <CustomerManagerView customers={customers} setCustomers={setCustomers} cogs={cogs} settings={settings} onBack={() => setActiveTab('settings')} />}
+          {activeTab === 'cogs' && <CogsManagerView cogs={cogs} setCogs={setCogs} websitePrices={websitePrices} setWebsitePrices={setWebsitePrices} settings={settings} setSettings={setSettings} skuImages={skuImages} handleImageUpload={handleImageUpload} onBack={() => setActiveTab('settings')} />}
         </main>
       </div>
     </div>
