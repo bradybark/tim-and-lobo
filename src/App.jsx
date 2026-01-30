@@ -1,21 +1,42 @@
 // src/App.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { Briefcase, Sun, Moon, Package } from 'lucide-react';
-import { Toaster } from 'sonner'; 
+import { Toaster } from 'sonner';
+import { get } from 'idb-keyval';
 import CompanyDashboard from './views/CompanyDashboard';
 import { getOrganizationConfig } from './utils/orgConfig';
 import { InventoryProvider } from './context/InventoryContext'; 
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
-const OrgCard = ({ name, description, themeColor, onClick }) => {
+const OrgCard = ({ name, description, themeColor, logo, onClick }) => {
   const hasColor = Boolean(themeColor);
+  const [logoUrl, setLogoUrl] = useState(null);
+
+  useEffect(() => {
+    if (logo && logo instanceof Blob) {
+      const url = URL.createObjectURL(logo);
+      setLogoUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setLogoUrl(null);
+    }
+  }, [logo]);
 
   return (
     <div className="h-full w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 transition-transform hover:scale-[1.02] duration-300">
-      <div className="shrink-0 w-32 h-20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-600/70 flex items-center justify-center mb-6 bg-slate-50 dark:bg-slate-900/60">
-        <Package 
-          className={`w-7 h-7 ${!hasColor ? 'text-slate-400 dark:text-slate-300' : ''}`} 
-          style={hasColor ? { color: themeColor } : {}} 
-        />
+      <div className="shrink-0 w-32 h-20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-600/70 flex items-center justify-center mb-6 bg-slate-50 dark:bg-slate-900/60 overflow-hidden">
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={`${name} logo`}
+            className="w-full h-full object-contain p-2"
+          />
+        ) : (
+          <Package
+            className={`w-7 h-7 ${!hasColor ? 'text-slate-400 dark:text-slate-300' : ''}`}
+            style={hasColor ? { color: themeColor } : {}}
+          />
+        )}
       </div>
       <h2 className="shrink-0 text-lg font-semibold text-slate-900 dark:text-slate-50 mb-1 text-center">
         {name}
@@ -27,11 +48,10 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
         type="button"
         onClick={onClick}
         style={hasColor ? { backgroundColor: themeColor } : {}}
-        className={`shrink-0 inline-flex items-center justify-center gap-2 text-xs font-medium px-5 py-2.5 rounded-xl transition-all duration-200 ${
-          hasColor
-            ? 'text-white hover:brightness-110 hover:shadow-lg shadow-md'
-            : 'bg-slate-900 text-slate-50 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white'
-        }`}
+        className={`shrink-0 inline-flex items-center justify-center gap-2 text-xs font-medium px-5 py-2.5 rounded-xl transition-all duration-200 ${hasColor
+          ? 'text-white hover:brightness-110 hover:shadow-lg shadow-md'
+          : 'bg-slate-900 text-slate-50 hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white'
+          }`}
       >
         Open Dashboard
         <Briefcase className="w-4 h-4" />
@@ -42,15 +62,39 @@ const OrgCard = ({ name, description, themeColor, onClick }) => {
 
 function App() {
   const organizations = useMemo(() => getOrganizationConfig(), []);
-  const [selectedOrg, setSelectedOrg] = useState(null); 
+  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [orgLogos, setOrgLogos] = useState({}); // Store logos keyed by org id
 
-  // --- Theme Management ---
+  // Load company logos for home page display
+  useEffect(() => {
+    const loadLogos = async () => {
+      const logos = {};
+      for (const org of organizations) {
+        try {
+          // Logo is stored separately with key: ${orgKey}_logo
+          const logo = await get(`${org.id}_logo`);
+          if (logo) {
+            logos[org.id] = logo;
+          }
+        } catch (e) {
+          console.log(`Could not load logo for ${org.id}`);
+        }
+      }
+      setOrgLogos(logos);
+    };
+    loadLogos();
+  }, [organizations]);
+
+  // --- Theme Management --- DEFAULT TO DARK MODE
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window === 'undefined') return true;
-    return (
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches
-    );
+    // Check localStorage first for saved preference
+    const saved = localStorage.getItem('themePreference');
+    if (saved !== null) {
+      return saved === 'dark';
+    }
+    // Default to dark mode
+    return true;
   });
 
   useEffect(() => {
@@ -58,6 +102,8 @@ function App() {
     const root = document.documentElement;
     if (isDarkMode) root.classList.add('dark');
     else root.classList.remove('dark');
+    // Save preference
+    localStorage.setItem('themePreference', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
 
   const toggleTheme = () => setIsDarkMode((prev) => !prev);
@@ -67,6 +113,7 @@ function App() {
     return (
       <InventoryProvider orgKey={selectedOrg.id}>
         <Toaster position="top-center" richColors />
+        <PWAInstallPrompt />
         <CompanyDashboard
           initialCompanyName={selectedOrg.name}
           orgKey={selectedOrg.id}
@@ -82,6 +129,7 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 flex items-center justify-center px-4">
       <Toaster position="top-center" richColors />
+      <PWAInstallPrompt />
 
       <button
         type="button"
@@ -103,6 +151,7 @@ function App() {
               name={org.name}
               description={org.description}
               themeColor={org.themeColor}
+              logo={orgLogos[org.id]}
               onClick={() => setSelectedOrg(org)}
             />
           ))}

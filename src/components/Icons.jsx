@@ -31,19 +31,25 @@ import {
   Lock,
   Calendar,
   LineChart,
-  UploadCloud
+  UploadCloud,
+  DollarSign, // NEW
+  CreditCard, // NEW
+  TrendingUp, // NEW
+  Box,        // NEW
+  Paperclip,  // NEW
+  Eye         // NEW
 } from 'lucide-react';
 
 export const Icons = {
   // Core Icons
   Package,
   Truck,
-  Clipboard: ClipboardList, // Alias for easier usage
+  Clipboard: ClipboardList,
   Alert: AlertTriangle,
   Check,
   Plus,
   Trash: Trash2,
-  Trash2, // Keep original name too
+  Trash2,
   Camera,
   Upload,
   
@@ -68,9 +74,17 @@ export const Icons = {
   Calendar,
   LineChart,
   
-  // User/Vendor
+  // User/Vendor/Customer
   Users,
   XCircle,
   Edit: Edit2,
   Edit2,
+  
+  // Financial / New
+  DollarSign,
+  CreditCard,
+  TrendingUp,
+  Box,
+  Paperclip,
+  Eye
 };

@@ -1,0 +1,15 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#111827"/>
+  
+  <defs>
+    <linearGradient id="lobo-green-mask" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4ade80" />
+      <stop offset="100%" style="stop-color:#22c55e" />
+    </linearGradient>
+  </defs>
+
+  <text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle" 
+        font-family="monospace" font-weight="bold" font-size="180" letter-spacing="-5">
+    <tspan fill="white">L</tspan><tspan fill="url(#lobo-green-mask)">T</tspan>
+  </text>
+</svg>
