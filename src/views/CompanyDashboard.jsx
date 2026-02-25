@@ -146,7 +146,7 @@ const CompanyDashboard = ({
 
   const prepareDataPayload = () => ({
     version: 2, orgKey, companyName, exportedAt: new Date().toISOString(),
-    snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders,
+    snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders,
     internalOrders, invoices, websiteOrders, expenses, expenseCategories
   });
   const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64 }; };
@@ -167,6 +167,7 @@ const CompanyDashboard = ({
     if (data.websiteOrders) setWebsiteOrders(data.websiteOrders);
     if (data.expenses) setExpenses(data.expenses);
     if (data.expenseCategories) setExpenseCategories(data.expenseCategories);
+    if (data.skuDescriptions) setSkuDescriptions(data.skuDescriptions);
     if (data.skuImages) { setSkuImages(prev => ({ ...prev, ...data.skuImages })); }
     toast.success('Imported successfully');
   };
@@ -179,16 +180,34 @@ const CompanyDashboard = ({
   const handleOptimizeImages = async () => { const opt = await optimizeImageLibrary(skuImages); setSkuImages(opt); };
   const handlePruneData = (m) => { /* existing logic */ };
 
-  // --- Feature 1: Startup Reconnect Prompt ---
+  // --- Feature 1: Startup Reconnect (auto-attempt, fallback to prompt) ---
   useEffect(() => {
     if (!dataLoaded || cloudFileHandle) return;
     const checkSavedHandle = async () => {
       try {
         const savedHandle = await get(`${orgKey}_cloudFileHandle`);
-        if (savedHandle && savedHandle.name) {
-          setPendingReconnectHandle(savedHandle);
-          setPendingReconnectName(savedHandle.name);
+        if (!savedHandle || !savedHandle.name) return;
+
+        // Auto-attempt: try to get permission silently
+        try {
+          const permission = await savedHandle.requestPermission({ mode: 'readwrite' });
+          if (permission === 'granted') {
+            const file = await savedHandle.getFile();
+            const text = await file.text();
+            try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { }
+            setCloudFileHandle(savedHandle);
+            setCloudStatus(`Linked ${savedHandle.name}`);
+            setPendingReconnectHandle(null);
+            setReconnectDismissed(false);
+            return;
+          }
+        } catch (e) {
+          // Auto-reconnect failed (browser needs user gesture), fall through to prompt
         }
+
+        // Fallback: show reconnect banner
+        setPendingReconnectHandle(savedHandle);
+        setPendingReconnectName(savedHandle.name);
       } catch (e) {
         console.log('No saved file handle found');
       }
@@ -311,7 +330,7 @@ const CompanyDashboard = ({
     };
     const timer = setTimeout(syncData, 2000);
     return () => clearTimeout(timer);
-  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, skuImages, dataLoaded]);
+  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, skuImages, dataLoaded]);
 
 
 
