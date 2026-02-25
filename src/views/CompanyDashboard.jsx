@@ -180,7 +180,7 @@ const CompanyDashboard = ({
   const handleOptimizeImages = async () => { const opt = await optimizeImageLibrary(skuImages); setSkuImages(opt); };
   const handlePruneData = (m) => { /* existing logic */ };
 
-  // --- Feature 1: Startup Reconnect (auto-attempt, fallback to prompt) ---
+  // --- Feature 1: Startup Reconnect (auto if permission persisted, else banner) ---
   useEffect(() => {
     if (!dataLoaded || cloudFileHandle) return;
     const checkSavedHandle = async () => {
@@ -188,24 +188,23 @@ const CompanyDashboard = ({
         const savedHandle = await get(`${orgKey}_cloudFileHandle`);
         if (!savedHandle || !savedHandle.name) return;
 
-        // Auto-attempt: try to get permission silently
+        // queryPermission does NOT require a user gesture (unlike requestPermission)
         try {
-          const permission = await savedHandle.requestPermission({ mode: 'readwrite' });
-          if (permission === 'granted') {
+          const status = await savedHandle.queryPermission({ mode: 'readwrite' });
+          if (status === 'granted') {
+            // Permission already persisted — reconnect silently
             const file = await savedHandle.getFile();
             const text = await file.text();
             try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { }
             setCloudFileHandle(savedHandle);
             setCloudStatus(`Linked ${savedHandle.name}`);
-            setPendingReconnectHandle(null);
-            setReconnectDismissed(false);
             return;
           }
         } catch (e) {
-          // Auto-reconnect failed (browser needs user gesture), fall through to prompt
+          // queryPermission not supported or failed, fall through to banner
         }
 
-        // Fallback: show reconnect banner
+        // Permission not persisted — show reconnect banner for one-click reconnect
         setPendingReconnectHandle(savedHandle);
         setPendingReconnectName(savedHandle.name);
       } catch (e) {
