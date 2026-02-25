@@ -32,7 +32,7 @@ const CustomerManagerView = ({ customers, setCustomers, cogs, settings, onBack }
       shipAddress: fd.get('shipAddress1'),
       type: fd.get('type'),
       paymentTerms: fd.get('paymentTerms'), // NEW
-      invoicePrefix: fd.get('invoicePrefix') || '', // NEW
+      invoiceSuffix: fd.get('invoiceSuffix') || '', // NEW
       isPartner: fd.get('isPartner') === 'on', // NEW
       isAmazon: fd.get('isAmazon') === 'on',   // NEW
       pricingRecords: editingId !== 'new' ? customers.find(c => c.id === editingId)?.pricingRecords || [] : []
@@ -106,8 +106,8 @@ const CustomerManagerView = ({ customers, setCustomers, cogs, settings, onBack }
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Prefix (Optional)</label>
-              <input name="invoicePrefix" defaultValue={cust.invoicePrefix} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="e.g. INV-" />
+              <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Suffix</label>
+              <input name="invoiceSuffix" defaultValue={cust.invoiceSuffix} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" placeholder="e.g. 140" />
             </div>
             <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Bill To */}

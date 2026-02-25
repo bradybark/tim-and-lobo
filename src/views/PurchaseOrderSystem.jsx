@@ -3,7 +3,6 @@ import { Plus, Download, Upload, Check, Trash2, ArrowLeft, FileText, Calendar, D
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { VendorCell } from '../components/VendorCell';
-import html2pdf from 'html2pdf.js';
 
 // Helper to format currency
 const formatMoney = (amount) => {
@@ -41,8 +40,17 @@ const PurchaseOrderSystem = ({
     companyLogo
 }) => {
     const [viewMode, setViewMode] = useState('list'); // list, create
-    const [previewPO, setPreviewPO] = useState(null); // PO object to preview
-    const [previewHtml, setPreviewHtml] = useState(''); // HTML content for preview
+    const [previewPO, setPreviewPO] = useState(null);
+    const [previewHtml, setPreviewHtml] = useState('');
+    const [activeSubTab, setActiveSubTab] = useState('orders'); // orders, reports
+
+    // --- Report State ---
+    const [reportStartDate, setReportStartDate] = useState(() => {
+        const d = new Date(); d.setMonth(d.getMonth() - 3);
+        return d.toISOString().split('T')[0];
+    });
+    const [reportEndDate, setReportEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [reportVendorFilter, setReportVendorFilter] = useState('all');
 
     // --- Create Mode State ---
     const [newPO, setNewPO] = useState({
@@ -76,6 +84,51 @@ const PurchaseOrderSystem = ({
 
     // Filter out legacy POs
     const validPOs = useMemo(() => pos.filter(p => p.items && Array.isArray(p.items)), [pos]);
+
+    // --- Report Computed Data ---
+    const filteredPOs = useMemo(() => {
+        return validPOs.filter(po => {
+            const d = po.orderDate;
+            if (d < reportStartDate || d > reportEndDate) return false;
+            if (reportVendorFilter !== 'all' && String(po.vendorId) !== String(reportVendorFilter)) return false;
+            return true;
+        });
+    }, [validPOs, reportStartDate, reportEndDate, reportVendorFilter]);
+
+    const vendorSummary = useMemo(() => {
+        const map = {};
+        filteredPOs.forEach(po => {
+            const vendor = vendors.find(v => v.id == po.vendorId);
+            const name = vendor?.name?.name || vendor?.name || 'Unknown';
+            if (!map[po.vendorId]) map[po.vendorId] = { name, poCount: 0, totalSpend: 0, items: 0 };
+            map[po.vendorId].poCount += 1;
+            map[po.vendorId].totalSpend += (po.totalAmount || 0);
+            map[po.vendorId].items += po.items.reduce((s, i) => s + (i.qty || 0), 0);
+        });
+        return Object.values(map).sort((a, b) => b.totalSpend - a.totalSpend);
+    }, [filteredPOs, vendors]);
+
+    const skuSummary = useMemo(() => {
+        const map = {};
+        filteredPOs.forEach(po => {
+            po.items.forEach(item => {
+                const key = item.sku || 'Unknown';
+                if (!map[key]) map[key] = { sku: key, totalQty: 0, totalSpend: 0, poCount: 0, vendors: new Set() };
+                map[key].totalQty += (item.qty || 0);
+                map[key].totalSpend += ((item.qty || 0) * (item.unitPrice || 0));
+                map[key].poCount += 1;
+                const vendor = vendors.find(v => v.id == po.vendorId);
+                map[key].vendors.add(vendor?.name?.name || vendor?.name || 'Unknown');
+            });
+        });
+        return Object.values(map).map(s => ({ ...s, vendors: [...s.vendors].join(', ') })).sort((a, b) => b.totalSpend - a.totalSpend);
+    }, [filteredPOs, vendors]);
+
+    const reportTotals = useMemo(() => ({
+        totalPOs: filteredPOs.length,
+        totalSpend: filteredPOs.reduce((s, po) => s + (po.totalAmount || 0), 0),
+        totalItems: filteredPOs.reduce((s, po) => s + po.items.reduce((s2, i) => s2 + (i.qty || 0), 0), 0)
+    }), [filteredPOs]);
 
     // --- List View Logic ---
     const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(validPOs, { key: 'orderDate', direction: 'desc' });
@@ -114,7 +167,7 @@ const PurchaseOrderSystem = ({
         if (companyLogo) {
             try {
                 const base64 = await blobToBase64(companyLogo);
-                logoImgTag = `<img src="${base64}" style="max-height: 80px; display: block; margin-bottom: 10px;" alt="Logo" />`;
+                logoImgTag = `<img src="${base64}" class="logo-img" alt="Logo" />`;
             } catch (e) {
                 console.error("Logo processing error", e);
             }
@@ -124,144 +177,153 @@ const PurchaseOrderSystem = ({
         const paymentTerms = po.termType === 'Custom' ? `Net ${po.termDays}` : po.termType;
 
         const itemsRows = po.items.map(i => `
-            <tr>
-                <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px;">${i.sku}</td>
-                <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px;">${i.description || ''}</td>
-                <td style="padding: 6px 8px; border-bottom: 1px solid #eee; text-align: center; font-size: 11px;">${i.qty}</td>
-                <td style="padding: 6px 8px; border-bottom: 1px solid #eee; text-align: right; font-size: 11px;">${formatMoney(i.unitPrice)}</td>
-                <td style="padding: 6px 8px; border-bottom: 1px solid #eee; text-align: right; font-size: 11px;">${formatMoney(i.qty * i.unitPrice)}</td>
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 10px;">${i.sku}</td>
+                <td style="padding: 10px;">${i.description || ''}</td>
+                <td style="padding: 10px; text-align: right;">${i.qty}</td>
+                <td style="padding: 10px; text-align: right;">${formatMoney(i.unitPrice)}</td>
+                <td style="padding: 10px; text-align: right;">${formatMoney(i.qty * i.unitPrice)}</td>
             </tr>
         `).join('');
 
         return `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    @page { size: portrait; margin: 0.5in; }
-                    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 0; margin: 0; color: #333; -webkit-print-color-adjust: exact; background: white; }
-                    .content-wrapper { max-width: 800px; margin: 0 auto; padding: 20px; }
-                    .header { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 3px solid #184833; padding-bottom: 10px; }
-                    .company-info { font-size: 11px; line-height: 1.3; color: #555; }
-                    .company-name { font-size: 16px; font-weight: bold; color: #184833; margin-bottom: 4px; text-transform: uppercase; }
-                    .po-title { text-align: right; }
-                    .po-title h1 { margin: 0 0 5px 0; font-size: 24px; color: #184833; text-transform: uppercase; font-weight: 700; }
-                    .po-details { font-size: 11px; line-height: 1.4; }
-                    .section-title { font-size: 10px; text-transform: uppercase; color: #184833; font-weight: bold; border-bottom: 1px solid #eee; padding-bottom: 2px; margin-bottom: 4px; }
-                    .address-block { font-size: 11px; line-height: 1.3; }
-                    .address-name { font-weight: bold; color: #000; }
-                    .grid-container { display: flex; gap: 20px; margin-bottom: 25px; }
-                    .flex-1 { flex: 1; }
-                    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                    th { background-color: #184833; color: #fff; text-align: left; padding: 6px 8px; font-size: 10px; text-transform: uppercase; font-weight: 600; }
-                    .totals { display: flex; justify-content: flex-end; }
-                    .totals-box { width: 250px; }
-                    .total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 11px; }
-                    .grand-total { font-size: 14px; font-weight: bold; border-top: 2px solid #184833; padding-top: 6px; margin-top: 4px; color: #184833; }
-                    .footer { text-align: center; margin-top: 40px; color: #666; font-size: 10px; border-top: 1px solid #eee; padding-top: 15px; }
-                </style>
-            </head>
-            <body>
-                <div class="content-wrapper">
-                    <div class="header">
-                        <div>
-                            ${logoImgTag}
-                            <div class="company-name">${myCompany?.name || 'Timothy\'s Toolbox'}</div>
-                            <div class="company-info">
-                                ${myCompany?.address1 || ''}<br>
-                                ${myCompany?.address2 ? `${myCompany.address2}<br>` : ''}
-                                ${myCompany?.city ? `${myCompany.city}, ` : ''}${myCompany?.state || ''} ${myCompany?.zip || ''}<br>
-                                ${myCompany?.email || 'info@timothystoolbox.com'}
-                            </div>
-                        </div>
-                        <div class="po-title">
-                            <h1>Purchase Order</h1>
-                            <div class="po-details">
-                                <strong>DATE:</strong> ${formatDate(po.orderDate)}<br>
-                                <strong>PO #:</strong> ${po.poNumber}<br>
-                                <strong>TERMS:</strong> ${paymentTerms}
-                            </div>
-                        </div>
+        <html>
+        <head>
+            <title>Purchase Order ${po.poNumber}</title>
+            <style>
+                body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; padding: 40px; max-width: 800px; margin: 0 auto; }
+                .header { display: flex; justify-content: space-between; margin-bottom: 40px; border-bottom: 2px solid #184833; padding-bottom: 20px; }
+                .logo-container { margin-bottom: 15px; }
+                .logo-img { max-height: 80px; max-width: 200px; }
+                .company-name { font-size: 24px; font-weight: 900; letter-spacing: 1px; margin-bottom: 5px; text-transform: uppercase; color: #184833; }
+                .company-details { font-size: 13px; color: #555; line-height: 1.4; }
+                .po-meta { text-align: right; }
+                .po-title { font-size: 32px; color: #184833; font-weight: bold; margin: 0 0 10px 0; text-transform: uppercase; }
+                .meta-row { display: flex; justify-content: flex-end; gap: 15px; font-size: 14px; margin-bottom: 5px; }
+                .meta-label { font-weight: bold; color: #666; }
+
+                .address-section { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 30px; }
+                .address-box { flex: 1; background: #f9f9f9; padding: 20px; border-radius: 5px; }
+                .address-box h3 { font-size: 12px; text-transform: uppercase; color: #888; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin: 0 0 10px 0; }
+                .address-name { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
+                .address-info { font-size: 14px; line-height: 1.5; color: #444; }
+
+                table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+                th { text-align: left; background: #184833; color: white; padding: 12px 10px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+
+                .totals { display: flex; justify-content: flex-end; }
+                .totals-box { width: 300px; }
+                .total-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+                .total-row.final { border-top: 2px solid #184833; border-bottom: none; font-weight: 900; font-size: 20px; margin-top: 10px; padding-top: 15px; color: #184833; }
+
+                .notes-box { margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px; border-left: 3px solid #184833; font-size: 13px; }
+                .footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; font-size: 13px; color: #888; }
+
+                @media print {
+                    body { padding: 20px; }
+                    @page { size: letter portrait; margin: 0.5in; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div>
+                    <div class="logo-container">
+                        ${logoImgTag}
                     </div>
-
-                    <div class="grid-container">
-                        <div class="flex-1">
-                            <div class="section-title">Vendor</div>
-                            <div class="address-block">
-                                <div class="address-name">${vendorName}</div>
-                                ${vendorAddress}<br>
-                                ${vendorEmail}
-                            </div>
-                        </div>
-                        <div class="flex-1">
-                            <div class="section-title">Ship To</div>
-                            <div class="address-block">
-                                <div class="address-name">${myCompany?.name || ''}</div>
-                                ${shipAddr}<br>
-                                ${shipAddr2 ? `${shipAddr2}<br>` : ''}
-                                ${shipCity}${shipCity && shipState ? ', ' : ''}${shipState} ${shipZip}
-                            </div>
-                        </div>
-                        <div class="flex-1">
-                            <div class="section-title">Bill To</div>
-                            <div class="address-block">
-                                <div class="address-name">${myCompany?.name || ''}</div>
-                                ${billAddr}<br>
-                                ${billAddr2 ? `${billAddr2}<br>` : ''}
-                                ${billCity}${billCity && billState ? ', ' : ''}${billState} ${billZip}
-                            </div>
-                        </div>
-                    </div>
-
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>SKU</th>
-                                <th>Description</th>
-                                <th style="text-align: center;">Qty</th>
-                                <th style="text-align: right;">Unit Price</th>
-                                <th style="text-align: right;">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody>${itemsRows}</tbody>
-                    </table>
-
-                    <div class="totals">
-                        <div class="totals-box">
-                            <div class="total-row">
-                                <span>Subtotal</span>
-                                <span>${formatMoney(po.totalAmount)}</span>
-                            </div>
-                            <div class="total-row">
-                                <span>Shipping</span>
-                                <span>$0.00</span>
-                            </div>
-                            <div class="total-row grand-total">
-                                <span>TOTAL</span>
-                                <span>${formatMoney(po.totalAmount)}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    ${po.notes ? `
-                    <div style="margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 4px; font-size: 11px; border-left: 3px solid #184833;">
-                        <strong>Notes:</strong><br>${po.notes}
-                    </div>` : ''}
-
-                    <div class="footer">
-                        Please remit invoices to info@timothystoolbox.com. Please Ship as soon as possible and provide tracking information once shipped.
+                    <div class="company-name">${myCompany?.name || 'Company Name'}</div>
+                    <div class="company-details">
+                        ${myCompany?.address1 || ''}<br>
+                        ${myCompany?.address2 ? `${myCompany.address2}<br>` : ''}
+                        ${myCompany?.city ? `${myCompany.city}, ` : ''}${myCompany?.state || ''} ${myCompany?.zip || ''}<br>
+                        ${myCompany?.email || ''}<br>
+                        ${myCompany?.phone || ''}
                     </div>
                 </div>
-            </body>
-            </html>
-        `;
+                <div class="po-meta">
+                    <div class="po-title">Purchase Order</div>
+                    <div class="meta-row"><span class="meta-label">PO #:</span> <span>${po.poNumber}</span></div>
+                    <div class="meta-row"><span class="meta-label">DATE:</span> <span>${formatDate(po.orderDate)}</span></div>
+                    <div class="meta-row"><span class="meta-label">TERMS:</span> <span>${paymentTerms}</span></div>
+                </div>
+            </div>
+
+            <div class="address-section">
+                <div class="address-box">
+                    <h3>Vendor</h3>
+                    <div class="address-name">${vendorName}</div>
+                    <div class="address-info">
+                        ${vendorAddress}${vendorAddress ? '<br>' : ''}
+                        ${vendorEmail}
+                    </div>
+                </div>
+                <div class="address-box">
+                    <h3>Ship To</h3>
+                    <div class="address-name">${myCompany?.name || ''}</div>
+                    <div class="address-info">
+                        ${shipAddr}${shipAddr ? '<br>' : ''}
+                        ${shipAddr2 ? `${shipAddr2}<br>` : ''}
+                        ${shipCity}${shipCity && shipState ? ', ' : ''}${shipState} ${shipZip}
+                    </div>
+                </div>
+                <div class="address-box">
+                    <h3>Bill To</h3>
+                    <div class="address-name">${myCompany?.name || ''}</div>
+                    <div class="address-info">
+                        ${billAddr}${billAddr ? '<br>' : ''}
+                        ${billAddr2 ? `${billAddr2}<br>` : ''}
+                        ${billCity}${billCity && billState ? ', ' : ''}${billState} ${billZip}
+                    </div>
+                </div>
+            </div>
+
+            <table>
+                <thead><tr><th>SKU</th><th>Description</th><th style="text-align: right;">Qty</th><th style="text-align: right;">Unit Price</th><th style="text-align: right;">Amount</th></tr></thead>
+                <tbody>${itemsRows}</tbody>
+            </table>
+
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 40px;">
+                ${po.notes ? `
+                <div class="notes-box" style="flex: 1; margin-top: 0;">
+                    <strong>Notes:</strong><br>${po.notes}
+                </div>` : '<div style="flex: 1;"></div>'}
+                <div class="totals-box">
+                    <div class="total-row">
+                        <span>Subtotal</span>
+                        <span>${formatMoney(po.totalAmount)}</span>
+                    </div>
+                    <div class="total-row final">
+                        <span>TOTAL</span>
+                        <span>${formatMoney(po.totalAmount)}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer">
+                Thank you for your business! Please ship as soon as possible and provide tracking information once shipped.
+            </div>
+        </body>
+        </html>
+    `;
     };
 
     // --- Handlers ---
 
+    const getNextPONumber = (vendorId) => {
+        const vendor = vendors.find(v => v.id == vendorId);
+        const prefix = vendor?.poPrefix || '';
+        if (prefix) {
+            // Count existing POs for this vendor with this prefix
+            const existingCount = pos.filter(p => p.vendorId == vendorId && p.poNumber?.startsWith(prefix)).length;
+            return `${prefix}${String(existingCount + 1).padStart(3, '0')}`;
+        }
+        // Fallback: generic PO number
+        return `PO-${new Date().getFullYear()}-${String(pos.length + 1).padStart(3, '0')}`;
+    };
+
     const handleCreateStart = () => {
         setNewPO({
-            poNumber: `PO-${new Date().getFullYear()}-${String(pos.length + 1).padStart(3, '0')}`,
+            poNumber: '',
             vendorId: '',
             orderDate: new Date().toISOString().split('T')[0],
             items: [],
@@ -325,7 +387,8 @@ const PurchaseOrderSystem = ({
     };
 
     const handleVendorSelect = (vendorId) => {
-        setNewPO(prev => ({ ...prev, vendorId }));
+        const poNumber = getNextPONumber(vendorId);
+        setNewPO(prev => ({ ...prev, vendorId, poNumber }));
     };
 
     const handleVendorProductSelect = (itemId, product) => {
@@ -485,43 +548,15 @@ const PurchaseOrderSystem = ({
         document.body.removeChild(link);
     };
 
-    const downloadPO = async (po, asPdf = true) => {
+    const downloadPO = async (po) => {
         const vendor = vendors.find(v => v.id == po.vendorId);
         const html = await generatePOHtml(po, vendor);
 
-        if (asPdf) {
-            // Create a temporary container for html2pdf
-            const container = document.createElement('div');
-            container.innerHTML = html;
-            container.style.position = 'absolute';
-            container.style.left = '-9999px';
-            document.body.appendChild(container);
-
-            const opt = {
-                margin: 0,
-                filename: `${po.poNumber}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true },
-                jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-            };
-
-            try {
-                await html2pdf().set(opt).from(container).save();
-            } finally {
-                document.body.removeChild(container);
-            }
-        } else {
-            // Fallback to HTML download
-            const blob = new Blob([html], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${po.poNumber}.html`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        }
+        // Open in new window for printing
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(html);
+        printWindow.document.close();
+        setTimeout(() => printWindow.print(), 500);
     };
 
     const openPreview = async (po) => {
@@ -796,6 +831,18 @@ const PurchaseOrderSystem = ({
                     </div>
                 </div>
 
+                {/* Notes */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes</label>
+                    <textarea
+                        rows={3}
+                        className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white p-2 border text-sm"
+                        placeholder="Optional notes for this purchase order..."
+                        value={newPO.notes || ''}
+                        onChange={(e) => setNewPO({ ...newPO, notes: e.target.value })}
+                    />
+                </div>
+
                 <div className="flex justify-end pt-4">
                     <button onClick={savePO} className="bg-indigo-600 text-white px-6 py-2 rounded shadow hover:bg-indigo-700">Save Purchase Order</button>
                 </div>
@@ -804,7 +851,7 @@ const PurchaseOrderSystem = ({
     }
 
     // --- List View ---
-    return (
+    const renderOrdersList = () => (
         <div className="space-y-6">
             <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={handleFileChange} />
 
@@ -940,6 +987,141 @@ const PurchaseOrderSystem = ({
                     </table>
                 </div>
             </div>
+        </div>
+    );
+
+    // --- Reports View ---
+    const renderReports = () => (
+        <div className="space-y-6">
+            {/* Filters */}
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Report Filters</h3>
+                <div className="flex flex-wrap gap-4 items-end">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
+                        <input type="date" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} className="p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
+                        <input type="date" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} className="p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Vendor</label>
+                        <select value={reportVendorFilter} onChange={e => setReportVendorFilter(e.target.value)} className="p-2 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <option value="all">All Vendors</option>
+                            {vendors.map(v => <option key={v.id} value={v.id}>{v.name?.name || v.name}</option>)}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                    <p className="text-xs text-gray-500 uppercase font-medium">Total POs</p>
+                    <p className="text-3xl font-bold text-gray-900 dark:text-white mt-1">{reportTotals.totalPOs}</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                    <p className="text-xs text-gray-500 uppercase font-medium">Total Spend</p>
+                    <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatMoney(reportTotals.totalSpend)}</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+                    <p className="text-xs text-gray-500 uppercase font-medium">Total Items Ordered</p>
+                    <p className="text-3xl font-bold text-indigo-600 dark:text-indigo-400 mt-1">{reportTotals.totalItems.toLocaleString()}</p>
+                </div>
+            </div>
+
+            {/* Vendor Summary */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="font-bold text-gray-900 dark:text-white">Purchases by Vendor</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">POs</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Items</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Spend</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {vendorSummary.map((row, i) => (
+                                <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">{row.name}</td>
+                                    <td className="px-6 py-4 text-sm text-right text-gray-600 dark:text-gray-300">{row.poCount}</td>
+                                    <td className="px-6 py-4 text-sm text-right text-gray-600 dark:text-gray-300">{row.items.toLocaleString()}</td>
+                                    <td className="px-6 py-4 text-sm text-right font-medium text-gray-900 dark:text-white">{formatMoney(row.totalSpend)}</td>
+                                </tr>
+                            ))}
+                            {vendorSummary.length === 0 && (
+                                <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-400">No purchase orders in this date range.</td></tr>
+                            )}
+                        </tbody>
+                        {vendorSummary.length > 1 && (
+                            <tfoot className="bg-gray-50 dark:bg-gray-800">
+                                <tr>
+                                    <td className="px-6 py-3 text-sm font-bold text-gray-900 dark:text-white">Total</td>
+                                    <td className="px-6 py-3 text-sm text-right font-bold text-gray-900 dark:text-white">{reportTotals.totalPOs}</td>
+                                    <td className="px-6 py-3 text-sm text-right font-bold text-gray-900 dark:text-white">{reportTotals.totalItems.toLocaleString()}</td>
+                                    <td className="px-6 py-3 text-sm text-right font-bold text-emerald-600 dark:text-emerald-400">{formatMoney(reportTotals.totalSpend)}</td>
+                                </tr>
+                            </tfoot>
+                        )}
+                    </table>
+                </div>
+            </div>
+
+            {/* SKU Summary */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="font-bold text-gray-900 dark:text-white">Purchases by SKU</h3>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendor(s)</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Orders</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Qty</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Spend</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Avg Unit Cost</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {skuSummary.map((row, i) => (
+                                <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-white">{row.sku}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-[200px] truncate" title={row.vendors}>{row.vendors}</td>
+                                    <td className="px-6 py-4 text-sm text-right text-gray-600 dark:text-gray-300">{row.poCount}</td>
+                                    <td className="px-6 py-4 text-sm text-right text-gray-600 dark:text-gray-300">{row.totalQty.toLocaleString()}</td>
+                                    <td className="px-6 py-4 text-sm text-right font-medium text-gray-900 dark:text-white">{formatMoney(row.totalSpend)}</td>
+                                    <td className="px-6 py-4 text-sm text-right text-gray-600 dark:text-gray-300">{formatMoney(row.totalQty > 0 ? row.totalSpend / row.totalQty : 0)}</td>
+                                </tr>
+                            ))}
+                            {skuSummary.length === 0 && (
+                                <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400">No items found in this date range.</td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+
+    // --- Main Return with Tab Bar ---
+    return (
+        <div className="space-y-6">
+            {/* Tab Bar */}
+            <div className="flex gap-4 border-b border-gray-200 dark:border-gray-700">
+                <button onClick={() => { setActiveSubTab('orders'); setViewMode('list'); }} className={`pb-2 px-4 font-medium ${activeSubTab === 'orders' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Purchase Orders</button>
+                <button onClick={() => setActiveSubTab('reports')} className={`pb-2 px-4 font-medium ${activeSubTab === 'reports' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Reports</button>
+            </div>
+
+            {activeSubTab === 'orders' && renderOrdersList()}
+            {activeSubTab === 'reports' && renderReports()}
         </div>
     );
 };

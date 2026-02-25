@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle, BarChart3,
-  Box, TrendingUp, RefreshCw, Globe
+  Box, TrendingUp, RefreshCw, Globe, DollarSign, Link2, X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { get, set } from 'idb-keyval';
@@ -20,6 +20,7 @@ import CustomerManagerView from './CustomerManagerView';
 import CogsManagerView from './CogsManagerView';
 import InternalOrdersView from './InternalOrdersView';
 import WebsiteOrdersView from './WebsiteOrdersView';
+import ExpenseTrackingView from './ExpenseTrackingView';
 
 import { useInventory } from '../context/InventoryContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
@@ -94,14 +95,17 @@ const CompanyDashboard = ({
     handleImageUpload,
     customers, setCustomers,
     cogs, setCogs,
-    websitePrices, setWebsitePrices, // NEW
+    websitePrices, setWebsitePrices,
+    skuDescriptions, setSkuDescriptions,
     outgoingOrders, setOutgoingOrders,
     internalOrders, setInternalOrders,
     invoices, setInvoices,
     websiteOrders, setWebsiteOrders,
     poBackupHandle, updatePoBackupHandle,
     invoiceBackupHandle, updateInvoiceBackupHandle,
-    myCompany, companyLogo
+    myCompany, companyLogo,
+    expenses, setExpenses,
+    expenseCategories, setExpenseCategories
   } = useInventory();
 
   // Rate/Metrics/Cloud Logic
@@ -109,6 +113,17 @@ const CompanyDashboard = ({
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
   const isSyncing = useRef(false);
+
+  // Reconnect prompt state
+  const [pendingReconnectHandle, setPendingReconnectHandle] = useState(null);
+  const [pendingReconnectName, setPendingReconnectName] = useState('');
+  const [reconnectDismissed, setReconnectDismissed] = useState(false);
+
+  // Auto-backup state
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(true);
+  const [lastAutoBackupTime, setLastAutoBackupTime] = useState(null);
+  const [autoBackupFolderHandle, setAutoBackupFolderHandle] = useState(null);
+  const autoBackupLoadedRef = useRef(false);
   const { plannerData, leadTimeStats } = useDashboardMetrics({ snapshots, pos, settings, rateParams });
 
   // Handlers
@@ -132,7 +147,7 @@ const CompanyDashboard = ({
   const prepareDataPayload = () => ({
     version: 2, orgKey, companyName, exportedAt: new Date().toISOString(),
     snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders,
-    internalOrders, invoices, websiteOrders
+    internalOrders, invoices, websiteOrders, expenses, expenseCategories
   });
   const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64 }; };
 
@@ -150,6 +165,8 @@ const CompanyDashboard = ({
     if (data.internalOrders) setInternalOrders(data.internalOrders);
     if (data.invoices) setInvoices(data.invoices);
     if (data.websiteOrders) setWebsiteOrders(data.websiteOrders);
+    if (data.expenses) setExpenses(data.expenses);
+    if (data.expenseCategories) setExpenseCategories(data.expenseCategories);
     if (data.skuImages) { setSkuImages(prev => ({ ...prev, ...data.skuImages })); }
     toast.success('Imported successfully');
   };
@@ -157,10 +174,123 @@ const CompanyDashboard = ({
   const handleExportExcelAction = () => exportPlannerExcel(plannerData, 'planner.xlsx');
   const handleExportAllAction = () => exportFullWorkbook({ plannerData, snapshots, pos }, 'full.xlsx');
   const handleExportLeadTimeAction = () => exportLeadTimeReport({ pos, settings }, 'leadtime.xlsx');
-  const handleLinkCloudFile = async () => { if (!window.showOpenFilePicker) return; try { const [handle] = await window.showOpenFilePicker({ types: [{ accept: { 'application/json': ['.json'] } }], multiple: false }); const file = await handle.getFile(); const text = await file.text(); try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { } await set('db_file_handle', handle); setCloudFileHandle(handle); setCloudStatus(`Linked ${handle.name}`); } catch (e) { } };
+  const handleLinkCloudFile = async () => { if (!window.showOpenFilePicker) return; try { const [handle] = await window.showOpenFilePicker({ types: [{ accept: { 'application/json': ['.json'] } }], multiple: false }); const file = await handle.getFile(); const text = await file.text(); try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { } await set(`${orgKey}_cloudFileHandle`, handle); setCloudFileHandle(handle); setCloudStatus(`Linked ${handle.name}`); setPendingReconnectHandle(null); setReconnectDismissed(false); } catch (e) { } };
   const handleCreateShareLink = async (shorten) => { try { let url = createSnapshotUrl(prepareDataPayload()); if (shorten) { const s = await shortenUrl(url); if (s) url = s; } navigator.clipboard.writeText(url); toast.success("Copied"); } catch (e) { toast.error("Too large"); } };
   const handleOptimizeImages = async () => { const opt = await optimizeImageLibrary(skuImages); setSkuImages(opt); };
   const handlePruneData = (m) => { /* existing logic */ };
+
+  // --- Feature 1: Startup Reconnect Prompt ---
+  useEffect(() => {
+    if (!dataLoaded || cloudFileHandle) return;
+    const checkSavedHandle = async () => {
+      try {
+        const savedHandle = await get(`${orgKey}_cloudFileHandle`);
+        if (savedHandle && savedHandle.name) {
+          setPendingReconnectHandle(savedHandle);
+          setPendingReconnectName(savedHandle.name);
+        }
+      } catch (e) {
+        console.log('No saved file handle found');
+      }
+    };
+    checkSavedHandle();
+  }, [dataLoaded, orgKey, cloudFileHandle]);
+
+  const handleReconnect = async () => {
+    if (!pendingReconnectHandle) return;
+    try {
+      const permission = await pendingReconnectHandle.requestPermission({ mode: 'readwrite' });
+      if (permission === 'granted') {
+        const file = await pendingReconnectHandle.getFile();
+        const text = await file.text();
+        try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { }
+        setCloudFileHandle(pendingReconnectHandle);
+        setCloudStatus(`Linked ${pendingReconnectHandle.name}`);
+        setPendingReconnectHandle(null);
+        toast.success('Reconnected to backup file');
+      } else {
+        toast.error('Permission denied. Please link manually.');
+        setPendingReconnectHandle(null);
+      }
+    } catch (e) {
+      console.error('Reconnect failed', e);
+      toast.error('Could not reconnect. Please link manually.');
+      setPendingReconnectHandle(null);
+    }
+  };
+
+  // --- Feature 2: Auto-Backup (every 30 minutes) ---
+  useEffect(() => {
+    if (!dataLoaded) return;
+    const loadPref = async () => {
+      const saved = await get(`${orgKey}_autoBackupEnabled`);
+      if (saved !== undefined) setAutoBackupEnabled(saved);
+      const savedFolder = await get(`${orgKey}_autoBackupFolderHandle`);
+      if (savedFolder) setAutoBackupFolderHandle(savedFolder);
+      autoBackupLoadedRef.current = true;
+    };
+    loadPref();
+  }, [dataLoaded, orgKey]);
+
+  const handleToggleAutoBackup = useCallback(async (enabled) => {
+    setAutoBackupEnabled(enabled);
+    await set(`${orgKey}_autoBackupEnabled`, enabled);
+  }, [orgKey]);
+
+  const handleSetAutoBackupFolder = useCallback(async () => {
+    if (!window.showDirectoryPicker) return;
+    try {
+      const handle = await window.showDirectoryPicker();
+      setAutoBackupFolderHandle(handle);
+      await set(`${orgKey}_autoBackupFolderHandle`, handle);
+      toast.success(`Auto-backup folder set: ${handle.name}`);
+    } catch (e) {
+      console.log('Folder picker cancelled');
+    }
+  }, [orgKey]);
+
+  useEffect(() => {
+    if (!dataLoaded || !autoBackupEnabled || !autoBackupLoadedRef.current) return;
+    const runBackup = async () => {
+      try {
+        const data = prepareDataPayload();
+        const json = JSON.stringify(data, null, 2);
+
+        if (autoBackupFolderHandle) {
+          // Write directly to the chosen folder
+          try {
+            const permission = await autoBackupFolderHandle.requestPermission({ mode: 'readwrite' });
+            if (permission === 'granted') {
+              const fileHandle = await autoBackupFolderHandle.getFileHandle(`${orgKey}_autobackup.json`, { create: true });
+              const writable = await fileHandle.createWritable();
+              await writable.write(json);
+              await writable.close();
+              setLastAutoBackupTime(new Date().toLocaleTimeString());
+              return;
+            }
+          } catch (folderErr) {
+            console.error('Folder write failed, falling back to download', folderErr);
+          }
+        }
+
+        // Fallback: download to Downloads folder
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${orgKey}_autobackup.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setLastAutoBackupTime(new Date().toLocaleTimeString());
+      } catch (err) {
+        console.error('Auto-backup failed', err);
+      }
+    };
+    const intervalId = setInterval(runBackup, 30 * 60 * 1000); // 30 minutes
+    return () => clearInterval(intervalId);
+  }, [dataLoaded, autoBackupEnabled, orgKey, autoBackupFolderHandle]);
 
   useEffect(() => {
     if (!cloudFileHandle || !dataLoaded) return;
@@ -181,7 +311,7 @@ const CompanyDashboard = ({
     };
     const timer = setTimeout(syncData, 2000);
     return () => clearTimeout(timer);
-  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders, internalOrders, invoices, websiteOrders, skuImages, dataLoaded]);
+  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, skuImages, dataLoaded]);
 
 
 
@@ -205,8 +335,15 @@ const CompanyDashboard = ({
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ].filter(Boolean);
 
+  // Build expenses tabs
+  const expensesTabs = [
+    { id: 'expenses-dashboard', label: 'Expense Tracking', icon: DollarSign },
+  ];
+
   // Select current tabs based on parent tab
-  const currentTabs = hasOutgoingSection && parentTab === 'outgoing' ? outgoingTabs : inventoryTabs;
+  const currentTabs = parentTab === 'outgoing' && hasOutgoingSection ? outgoingTabs
+    : parentTab === 'expenses' ? expensesTabs
+      : inventoryTabs;
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
@@ -235,6 +372,7 @@ const CompanyDashboard = ({
           <div className="flex p-1 space-x-1 bg-gray-200 dark:bg-gray-800 rounded-xl w-fit">
             <button onClick={() => { setParentTab('inventory'); setActiveTab(has('inventoryLog') ? 'inventory' : 'pos'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'inventory' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Inventory</button>
             <button onClick={() => { setParentTab('outgoing'); setActiveTab(has('outgoingOrders') ? 'outgoing' : 'internal'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'outgoing' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Outgoing Orders</button>
+            <button onClick={() => { setParentTab('expenses'); setActiveTab('expenses-dashboard'); }} className={`flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'expenses' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}><DollarSign className="w-4 h-4" /> Expenses</button>
           </div>
         )}
 
@@ -249,7 +387,24 @@ const CompanyDashboard = ({
           })}
         </nav>
 
-        {!cloudFileHandle && (
+        {/* Reconnect Prompt Banner */}
+        {!cloudFileHandle && pendingReconnectHandle && !reconnectDismissed && (
+          <div className="mt-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-900/50 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-full bg-indigo-100 dark:bg-indigo-800/50 text-indigo-600 dark:text-indigo-400"><Link2 className="w-5 h-5" /></div>
+              <div className="text-sm">
+                <p className="font-semibold text-indigo-900 dark:text-indigo-100">Reconnect to Backup?</p>
+                <p className="text-indigo-700 dark:text-indigo-300/80">Previously linked to <strong>{pendingReconnectName}</strong>. Click to resume live syncing.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={handleReconnect} className="whitespace-nowrap px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-sm font-semibold text-white transition-colors shadow-sm">Reconnect</button>
+              <button onClick={() => setReconnectDismissed(true)} className="p-2 rounded-lg text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"><X className="w-4 h-4" /></button>
+            </div>
+          </div>
+        )}
+
+        {!cloudFileHandle && (!pendingReconnectHandle || reconnectDismissed) && (
           <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900/50 p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-full bg-amber-100 dark:bg-amber-800/50 text-amber-600 dark:text-amber-400"><AlertTriangle className="w-5 h-5" /></div>
@@ -278,6 +433,8 @@ const CompanyDashboard = ({
           {parentTab === 'outgoing' && activeTab === 'website' && has('websiteOrders') && <WebsiteOrdersView websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} cogs={cogs} websitePrices={websitePrices} settings={settings} />}
           {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && hasOutgoingSection && <OutgoingReportsView outgoingOrders={outgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} customers={customers} settings={settings} />}
 
+          {parentTab === 'expenses' && activeTab === 'expenses-dashboard' && <ExpenseTrackingView expenses={expenses} setExpenses={setExpenses} expenseCategories={expenseCategories} setExpenseCategories={setExpenseCategories} />}
+
 
           {activeTab === 'settings' && (
             <SettingsView
@@ -297,10 +454,15 @@ const CompanyDashboard = ({
               invoiceBackupHandle={invoiceBackupHandle}
               onSetPoHandle={updatePoBackupHandle}
               onSetInvoiceHandle={updateInvoiceBackupHandle}
+              autoBackupEnabled={autoBackupEnabled}
+              onToggleAutoBackup={handleToggleAutoBackup}
+              lastAutoBackupTime={lastAutoBackupTime}
+              autoBackupFolderHandle={autoBackupFolderHandle}
+              onSetAutoBackupFolder={handleSetAutoBackupFolder}
             />
           )}
           {activeTab === 'customers' && <CustomerManagerView customers={customers} setCustomers={setCustomers} cogs={cogs} settings={settings} onBack={() => setActiveTab('settings')} />}
-          {activeTab === 'cogs' && <CogsManagerView cogs={cogs} setCogs={setCogs} websitePrices={websitePrices} setWebsitePrices={setWebsitePrices} settings={settings} setSettings={setSettings} skuImages={skuImages} handleImageUpload={handleImageUpload} onBack={() => setActiveTab('settings')} />}
+          {activeTab === 'cogs' && <CogsManagerView cogs={cogs} setCogs={setCogs} websitePrices={websitePrices} setWebsitePrices={setWebsitePrices} skuDescriptions={skuDescriptions} setSkuDescriptions={setSkuDescriptions} settings={settings} setSettings={setSettings} skuImages={skuImages} handleImageUpload={handleImageUpload} onBack={() => setActiveTab('settings')} />}
         </main>
       </div>
     </div>

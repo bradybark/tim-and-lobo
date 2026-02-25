@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import {
   UploadCloud, Download, FileText, Users, Trash2, Image as ImageIcon, Share2,
-  DollarSign, TrendingUp, Building, Truck, Database, Briefcase, Shield
+  DollarSign, TrendingUp, Building, Truck, Database, Briefcase, Shield, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageUploader } from '../components/ImageUploader';
@@ -33,7 +33,12 @@ const SettingsView = ({
   poBackupHandle,
   invoiceBackupHandle,
   onSetPoHandle,
-  onSetInvoiceHandle
+  onSetInvoiceHandle,
+  autoBackupEnabled,
+  onToggleAutoBackup,
+  lastAutoBackupTime,
+  autoBackupFolderHandle,
+  onSetAutoBackupFolder
 }) => {
   const { myCompany, setMyCompany, companyLogo, handleLogoUpload } = useInventory();
   const fileInputRef = useRef(null);
@@ -124,6 +129,51 @@ const SettingsView = ({
                       Set Folder
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <hr className="border-gray-200 dark:border-gray-700" />
+
+            {/* Auto-Backup Toggle */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Auto-Backup (Every 30 min)</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Automatically downloads a backup file to your Downloads folder every 30 minutes while the app is open.
+              </p>
+              <div className="flex items-center justify-between rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-slate-900/60 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Clock className="w-4 h-4 text-gray-500" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Periodic Auto-Backup</p>
+                    {lastAutoBackupTime && (
+                      <p className="text-[11px] text-emerald-600 dark:text-emerald-400">Last backup: {lastAutoBackupTime}</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => onToggleAutoBackup && onToggleAutoBackup(!autoBackupEnabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${autoBackupEnabled ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoBackupEnabled ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                </button>
+              </div>
+              {/* Folder Picker */}
+              <div className="p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-slate-900/40">
+                <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Backup Folder</h4>
+                <p className="text-xs text-gray-500 mb-3">Choose where auto-backups are saved. If no folder is set, backups download to your Downloads folder.</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-mono bg-white dark:bg-black/20 px-2 py-1 rounded text-gray-600 dark:text-gray-400 truncate max-w-[200px]">
+                    {autoBackupFolderHandle ? autoBackupFolderHandle.name : 'Not set (Downloads)'}
+                  </span>
+                  <button
+                    onClick={onSetAutoBackupFolder}
+                    className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-3 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-600"
+                  >
+                    Set Folder
+                  </button>
                 </div>
               </div>
             </div>
@@ -304,8 +354,8 @@ const SettingsView = ({
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${isActive
-                    ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
                   }`}
               >
                 <Icon className={`w-4 h-4 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : ''}`} />
@@ -327,8 +377,8 @@ const SettingsView = ({
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${isActive
-                    ? 'bg-white dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400'
+                  ? 'bg-white dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400'
                   }`}
               >
                 <Icon className="w-3.5 h-3.5" />

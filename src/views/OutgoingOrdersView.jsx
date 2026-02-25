@@ -1,6 +1,6 @@
 // src/views/OutgoingOrdersView.jsx
 import React, { useState, useMemo } from 'react';
-import { Plus, Eye, Trash2, Paperclip, Printer, Search } from 'lucide-react';
+import { Plus, Eye, Trash2, Paperclip, Printer, Search, FileText, Receipt } from 'lucide-react';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { FileUploader } from '../components/FileUploader';
@@ -36,13 +36,14 @@ const blobToDataURL = (blob) => {
 };
 
 // --- ORDER MODAL COMPONENT ---
-const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyLogo: propLogo }) => {
-  const { myCompany, companyLogo: contextLogo } = useInventory();
+const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyLogo: propLogo, outgoingOrders }) => {
+  const { myCompany, companyLogo: contextLogo, skuDescriptions } = useInventory();
   const companyLogo = propLogo || contextLogo;
   const [formData, setFormData] = useState(() => ({
     id: order?.id || Date.now(),
     date: order?.date || new Date().toISOString().split('T')[0],
     poNumber: order?.poNumber || '',
+    invoiceNumber: order?.invoiceNumber || '',
     customerId: order?.customerId || '',
     paymentTerms: order?.paymentTerms || 'Due on Receipt',
     items: order?.items || [],
@@ -114,10 +115,39 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
     const docTitle = type === 'invoice' ? 'INVOICE' : 'ORDER CONFIRMATION';
     const docNumberLabel = type === 'invoice' ? 'INVOICE #' : 'PO / REF #';
 
-    let docNumber = formData.poNumber;
-    if (type === 'invoice' && customer?.invoicePrefix) {
-      docNumber = `${customer.invoicePrefix}${formData.poNumber}`;
+    let generatedInvoiceNumber = formData.invoiceNumber;
+    if (type === 'invoice' && !generatedInvoiceNumber) {
+      const customerOrders = (outgoingOrders || []).filter(o => o.customerId === customer.id && o.invoiceNumber !== undefined && o.invoiceNumber !== '');
+      let maxSeq = 0;
+      const suffixStr = customer.invoiceSuffix || '';
+
+      customerOrders.forEach(o => {
+        let seqStr = '';
+        // If the invoice starts with the exact suffix provided by the customer
+        if (suffixStr && o.invoiceNumber.startsWith(suffixStr)) {
+          seqStr = o.invoiceNumber.substring(suffixStr.length);
+        }
+        // If there's no suffix on the customer, but the invoice number is purely numeric
+        else if (!suffixStr && /^\\d+$/.test(o.invoiceNumber)) {
+          seqStr = o.invoiceNumber;
+        }
+        // If it doesn't match the current suffix, it's ignored for sequence calculation
+
+        if (seqStr) {
+          const seq = parseInt(seqStr, 10);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
+          }
+        }
+      });
+
+      generatedInvoiceNumber = `${suffixStr}${String(maxSeq + 1).padStart(3, '0')}`;
+      // Update form data so that if the user pushes Save Order, it saves the assigned invoice number
+      setFormData(prev => ({ ...prev, invoiceNumber: generatedInvoiceNumber }));
     }
+
+    const docNumber = type === 'invoice' ? generatedInvoiceNumber : formData.poNumber;
+    const poNumberHtml = type === 'invoice' ? `<div class="meta-row"><span class="meta-label">PO #:</span> <span>${formData.poNumber || ''}</span></div>` : '';
 
     // Logic: Due Date Calculation (Simple Net X logic)
     // If 'Custom', we might need more logic but for now we follow the dropdowns (Net 15, 30, etc.)
@@ -133,14 +163,18 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
     const dueDateStr = formatDate(dateObj.toISOString());
 
     // Items
-    const itemsRows = formData.items.map(item => `
+    const itemsRows = formData.items.map(item => {
+      const desc = skuDescriptions?.[item.sku] || '';
+      return `
         <tr style="border-bottom: 1px solid #eee;">
             <td style="padding: 10px;">${item.sku}</td>
+            <td style="padding: 10px;">${desc}</td>
             <td style="padding: 10px; text-align: right;">${item.count}</td>
             <td style="padding: 10px; text-align: right;">${formatMoney(item.price)}</td>
             <td style="padding: 10px; text-align: right;">${formatMoney(item.count * item.price)}</td>
         </tr>
-    `).join('');
+      `;
+    }).join('');
 
     return `
         <!DOCTYPE html>
@@ -204,6 +238,7 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
                     <div class="invoice-title">${docTitle}</div>
                     <div class="meta-row"><span class="meta-label">DATE:</span> <span>${formatDate(formData.date)}</span></div>
                     <div class="meta-row"><span class="meta-label">${docNumberLabel}:</span> <span>${docNumber}</span></div>
+                    ${poNumberHtml}
                     ${type === 'invoice' ? `<div class="meta-row"><span class="meta-label">TERMS:</span> <span>${terms}</span></div>` : ''}
                     ${type === 'invoice' ? `<div class="meta-row"><span class="meta-label">DUE DATE:</span> <span>${dueDateStr}</span></div>` : ''}
                     ${type === 'invoice' && formData.isPaid ? '<div style="text-align: right;"><div class="paid-stamp">PAID</div></div>' : ''}
@@ -230,14 +265,13 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
             </div>
 
             <table>
-                <thead><tr><th>Description</th><th style="text-align: right;">Qty</th><th style="text-align: right;">Unit Price</th><th style="text-align: right;">Amount</th></tr></thead>
+                <thead><tr><th>SKU</th><th>Description</th><th style="text-align: right;">Qty</th><th style="text-align: right;">Unit Price</th><th style="text-align: right;">Amount</th></tr></thead>
                 <tbody>${itemsRows}</tbody>
             </table>
 
             <div class="totals">
                 <div class="totals-box">
                     <div class="total-row"><span>Subtotal</span><span>${formatMoney(subTotal)}</span></div>
-                    <div class="total-row"><span>Shipping</span><span>${formatMoney(formData.shippingCost)}</span></div>
                     ${Number(formData.adjustment) !== 0 ? `<div class="total-row"><span>Adjustment ${formData.adjustmentNote ? `(${formData.adjustmentNote})` : ''}</span><span>${formatMoney(formData.adjustment)}</span></div>` : ''}
                     ${Number(formData.processingFee) !== 0 ? `<div class="total-row"><span>Processing Fee</span><span>${formatMoney(formData.processingFee)}</span></div>` : ''}
                     <div class="total-row final">
@@ -454,7 +488,23 @@ const OutgoingOrdersView = (props) => {
     );
   }, [outgoingOrders, customers, search]);
 
-  const { processedData, handleSort, sortConfig, filters, handleFilter } = useTable(filteredData);
+  const handleFilter = (key, value) => {
+    // Assuming handleFilter is part of useTable
+  }; // Not strictly needed, useTable handles it but I am injecting handleViewFile below
+
+  const handleViewFile = (file) => {
+    if (!file) return;
+    if (file instanceof Blob || file instanceof File) {
+      const url = URL.createObjectURL(file);
+      window.open(url, '_blank');
+    } else if (typeof file === 'string') {
+      window.open(file, '_blank');
+    } else {
+      toast.error('File format not supported for viewing.');
+    }
+  };
+
+  const { processedData, handleSort, sortConfig, filters, handleFilter: tableFilter } = useTable(filteredData);
 
   const handleEdit = (order) => {
     setSelectedOrder(order);
@@ -517,12 +567,12 @@ const OutgoingOrdersView = (props) => {
           <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs uppercase font-medium">
               <tr>
-                <SortableHeaderCell label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.date} />
-                <SortableHeaderCell label="PO Number" sortKey="poNumber" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.poNumber} />
-                <SortableHeaderCell label="Customer" sortKey="customerId" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.customerId} />
+                <SortableHeaderCell label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.date} />
+                <SortableHeaderCell label="PO Number" sortKey="poNumber" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.poNumber} />
+                <SortableHeaderCell label="Customer" sortKey="customerId" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.customerId} />
                 <th className="px-6 py-3">Items</th>
-                <SortableHeaderCell label="Total" sortKey="total" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.total} />
-                <SortableHeaderCell label="Status" sortKey="isPaid" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.isPaid} />
+                <SortableHeaderCell label="Total" sortKey="total" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.total} />
+                <SortableHeaderCell label="Status" sortKey="isPaid" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.isPaid} />
                 <th className="px-6 py-3 text-right">Actions</th>
               </tr>
             </thead>
@@ -569,6 +619,12 @@ const OutgoingOrdersView = (props) => {
                       })()}
                     </td>
                     <td className="px-6 py-4 text-right flex justify-end gap-2">
+                      {order.filePO && (
+                        <button onClick={() => handleViewFile(order.filePO)} title="View PO" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-indigo-600"><FileText className="w-4 h-4" /></button>
+                      )}
+                      {order.fileInvoice && (
+                        <button onClick={() => handleViewFile(order.fileInvoice)} title="View Invoice" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-green-600"><Receipt className="w-4 h-4" /></button>
+                      )}
                       <button onClick={() => handleEdit(order)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-blue-600"><Eye className="w-4 h-4" /></button>
                       <button onClick={() => handleDelete(order.id)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
                     </td>
@@ -587,6 +643,7 @@ const OutgoingOrdersView = (props) => {
           allSkus={allSkus}
           cogs={cogs}
           companyLogo={companyLogo}
+          outgoingOrders={outgoingOrders}
           onClose={() => setIsModalOpen(false)}
           onSave={handleSave}
         />

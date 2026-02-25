@@ -43,6 +43,7 @@ const VendorEditor = ({ vendor, onSave, onCancel }) => {
       address: fd.get('address'),
       country: fd.get('country'),
       email: fd.get('email'),
+      poPrefix: fd.get('poPrefix')?.trim() || '',
       products: vendorProducts
     };
 
@@ -105,6 +106,11 @@ const VendorEditor = ({ vendor, onSave, onCancel }) => {
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Country of Manufacturing</label>
               <input name="country" defaultValue={vendor.country} className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white p-2 border" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">PO Prefix</label>
+              <input name="poPrefix" defaultValue={vendor.poPrefix || ''} placeholder="e.g. LIFT-" className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white p-2 border" />
+              <p className="mt-1 text-xs text-gray-400">Auto-numbers POs as PREFIX001, PREFIX002, etc.</p>
             </div>
           </div>
         </div>

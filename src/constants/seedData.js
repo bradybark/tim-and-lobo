@@ -66,20 +66,23 @@ export const LOBO_VENDORS = [];
 
 // --- SALES & INTERNAL DATA ---
 export const LOBO_CUSTOMERS = [];
-export const LOBO_COGS = {}; 
+export const LOBO_COGS = {};
 export const LOBO_WEBSITE_PRICES = {}; // NEW
-export const LOBO_OUTGOING = []; 
+export const LOBO_OUTGOING = [];
 export const LOBO_INTERNAL = [];
 export const LOBO_INVOICES = [];
-export const LOBO_WEBSITE_ORDERS = []; 
+export const LOBO_WEBSITE_ORDERS = [];
 export const LOBO_MY_COMPANY = {
-    name: 'Lobo Tool Company',
-    address1: '123 Tool Street',
-    address2: 'Warehouse Dist, GA 30000',
-    email: 'billing@lobotools.com',
-    phone: '555-0199',
-    contact: 'Accounts Receivable'
+  name: 'Lobo Tool Company',
+  address1: '123 Tool Street',
+  address2: 'Warehouse Dist, GA 30000',
+  email: 'billing@lobotools.com',
+  phone: '555-0199',
+  contact: 'Accounts Receivable'
 };
+
+export const LOBO_EXPENSES = [];
+export const LOBO_EXPENSE_CATEGORIES = ['Freight', 'Inventory Samples', 'Software', 'Advertising', 'Taxes', 'Supplies', 'Bank Fees', 'Other'];
 
 export const TIMOTHY_SNAPSHOTS = [];
 export const TIMOTHY_POS = [];
@@ -93,10 +96,13 @@ export const TIMOTHY_INTERNAL = [];
 export const TIMOTHY_INVOICES = [];
 export const TIMOTHY_WEBSITE_ORDERS = [];
 export const TIMOTHY_MY_COMPANY = {
-    name: 'Timothy Corp',
-    address1: '',
-    address2: '',
-    email: '',
-    phone: '',
-    contact: ''
+  name: 'Timothy Corp',
+  address1: '',
+  address2: '',
+  email: '',
+  phone: '',
+  contact: ''
 };
+
+export const TIMOTHY_EXPENSES = [];
+export const TIMOTHY_EXPENSE_CATEGORIES = ['Freight', 'Inventory Samples', 'Software', 'Advertising', 'Taxes', 'Supplies', 'Bank Fees', 'Other'];

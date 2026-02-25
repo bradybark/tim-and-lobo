@@ -3,9 +3,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { get, set } from 'idb-keyval';
 import {
   LOBO_SNAPSHOTS, LOBO_POS, LOBO_SETTINGS, LOBO_VENDORS,
-  LOBO_CUSTOMERS, LOBO_COGS, LOBO_WEBSITE_PRICES, LOBO_OUTGOING, LOBO_INTERNAL, LOBO_INVOICES, LOBO_MY_COMPANY, LOBO_WEBSITE_ORDERS,
+  LOBO_CUSTOMERS, LOBO_COGS, LOBO_WEBSITE_PRICES, LOBO_OUTGOING, LOBO_INTERNAL, LOBO_INVOICES, LOBO_MY_COMPANY, LOBO_WEBSITE_ORDERS, LOBO_EXPENSES, LOBO_EXPENSE_CATEGORIES,
   TIMOTHY_SNAPSHOTS, TIMOTHY_POS, TIMOTHY_SETTINGS, TIMOTHY_VENDORS,
-  TIMOTHY_CUSTOMERS, TIMOTHY_COGS, TIMOTHY_WEBSITE_PRICES, TIMOTHY_OUTGOING, TIMOTHY_INTERNAL, TIMOTHY_INVOICES, TIMOTHY_MY_COMPANY, TIMOTHY_WEBSITE_ORDERS
+  TIMOTHY_CUSTOMERS, TIMOTHY_COGS, TIMOTHY_WEBSITE_PRICES, TIMOTHY_OUTGOING, TIMOTHY_INTERNAL, TIMOTHY_INVOICES, TIMOTHY_MY_COMPANY, TIMOTHY_WEBSITE_ORDERS, TIMOTHY_EXPENSES, TIMOTHY_EXPENSE_CATEGORIES
 } from '../constants/seedData';
 
 const LEGACY_SEEDS = {
@@ -21,7 +21,9 @@ const LEGACY_SEEDS = {
     internal: LOBO_INTERNAL,
     invoices: LOBO_INVOICES,
     websiteOrders: LOBO_WEBSITE_ORDERS,
-    myCompany: LOBO_MY_COMPANY
+    myCompany: LOBO_MY_COMPANY,
+    expenses: LOBO_EXPENSES || [],
+    expenseCategories: LOBO_EXPENSE_CATEGORIES || ['Freight', 'Inventory Samples', 'Software', 'Advertising', 'Taxes', 'Supplies', 'Bank Fees', 'Other']
   },
   timothy: {
     snapshots: TIMOTHY_SNAPSHOTS,
@@ -35,7 +37,9 @@ const LEGACY_SEEDS = {
     internal: TIMOTHY_INTERNAL,
     invoices: TIMOTHY_INVOICES,
     websiteOrders: TIMOTHY_WEBSITE_ORDERS,
-    myCompany: TIMOTHY_MY_COMPANY
+    myCompany: TIMOTHY_MY_COMPANY,
+    expenses: TIMOTHY_EXPENSES || [],
+    expenseCategories: TIMOTHY_EXPENSE_CATEGORIES || ['Freight', 'Inventory Samples', 'Software', 'Advertising', 'Taxes', 'Supplies', 'Bank Fees', 'Other']
   }
 };
 
@@ -49,13 +53,16 @@ export function useInventoryData(orgKey) {
   const [skuImages, setSkuImages] = useState({});
   const [customers, setCustomers] = useState([]);
   const [cogs, setCogs] = useState({});
-  const [websitePrices, setWebsitePrices] = useState({}); // NEW
+  const [websitePrices, setWebsitePrices] = useState({});
+  const [skuDescriptions, setSkuDescriptions] = useState({});
   const [outgoingOrders, setOutgoingOrders] = useState([]);
   const [internalOrders, setInternalOrders] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [websiteOrders, setWebsiteOrders] = useState([]);
   const [myCompany, setMyCompany] = useState({});
   const [companyLogo, setCompanyLogo] = useState(null);
+  const [expenses, setExpenses] = useState([]);
+  const [expenseCategories, setExpenseCategories] = useState([]);
 
   // File System Handles (Not part of JSON export)
   const [poBackupHandle, setPoBackupHandle] = useState(null);
@@ -74,10 +81,11 @@ export function useInventoryData(orgKey) {
 
         const [
           savedSnaps, savedPos, savedSettings, savedVendors, savedImages,
-          savedCustomers, savedCogs, savedWebsitePrices, savedOutgoing,
+          savedCustomers, savedCogs, savedWebsitePrices, savedSkuDescriptions, savedOutgoing,
           savedInternal, savedInvoices, savedWebsiteOrders,
           savedMyCompany, savedLogo,
-          savedPoHandle, savedInvHandle
+          savedPoHandle, savedInvHandle,
+          savedExpenses, savedExpenseCategories
         ] = await Promise.all([
           load(`${orgKey}_snapshots`, seeds.snapshots),
           load(`${orgKey}_pos`, seeds.pos),
@@ -87,6 +95,7 @@ export function useInventoryData(orgKey) {
           load(`${orgKey}_customers`, seeds.customers),
           load(`${orgKey}_cogs`, seeds.cogs),
           load(`${orgKey}_websitePrices`, seeds.websitePrices),
+          load(`${orgKey}_skuDescriptions`, {}),
           load(`${orgKey}_outgoing`, seeds.outgoing),
           load(`${orgKey}_internal`, seeds.internal),
           load(`${orgKey}_invoices`, seeds.invoices),
@@ -94,7 +103,9 @@ export function useInventoryData(orgKey) {
           load(`${orgKey}_myCompany`, seeds.myCompany),
           get(`${orgKey}_logo`),
           get(`${orgKey}_poBackupHandle`),
-          get(`${orgKey}_invoiceBackupHandle`)
+          get(`${orgKey}_invoiceBackupHandle`),
+          load(`${orgKey}_expenses`, seeds.expenses),
+          load(`${orgKey}_expenseCategories`, seeds.expenseCategories)
         ]);
 
         setSnapshots(savedSnaps || []);
@@ -104,6 +115,7 @@ export function useInventoryData(orgKey) {
         setCustomers(savedCustomers || []);
         setCogs(savedCogs || {});
         setWebsitePrices(savedWebsitePrices || {});
+        setSkuDescriptions(savedSkuDescriptions || {});
         setOutgoingOrders(savedOutgoing || []);
         setInternalOrders(savedInternal || []);
         setInvoices(savedInvoices || []);
@@ -112,6 +124,8 @@ export function useInventoryData(orgKey) {
         setCompanyLogo(savedLogo || null);
         setPoBackupHandle(savedPoHandle || null);
         setInvoiceBackupHandle(savedInvHandle || null);
+        setExpenses(savedExpenses || []);
+        setExpenseCategories(savedExpenseCategories || seeds.expenseCategories || []);
 
         if (savedImages && typeof savedImages === 'object') {
           setSkuImages(savedImages);
@@ -139,18 +153,21 @@ export function useInventoryData(orgKey) {
       set(`${orgKey}_vendors`, vendors);
       set(`${orgKey}_customers`, customers);
       set(`${orgKey}_cogs`, cogs);
-      set(`${orgKey}_websitePrices`, websitePrices); // Save New
+      set(`${orgKey}_websitePrices`, websitePrices);
+      set(`${orgKey}_skuDescriptions`, skuDescriptions);
       set(`${orgKey}_outgoing`, outgoingOrders);
       set(`${orgKey}_internal`, internalOrders);
       set(`${orgKey}_invoices`, invoices);
       set(`${orgKey}_websiteOrders`, websiteOrders);
       set(`${orgKey}_myCompany`, myCompany);
+      set(`${orgKey}_expenses`, expenses);
+      set(`${orgKey}_expenseCategories`, expenseCategories);
 
       console.log('Auto-saved data to IDB');
     }, 1000);
 
     return () => clearTimeout(handler);
-  }, [snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, orgKey, dataLoaded]);
+  }, [snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, expenses, expenseCategories, orgKey, dataLoaded]);
 
   // Handle Updates
   const updatePoBackupHandle = useCallback(async (handle) => {
@@ -207,7 +224,8 @@ export function useInventoryData(orgKey) {
     handleImageUpload,
     customers, setCustomers,
     cogs, setCogs,
-    websitePrices, setWebsitePrices, // New Export
+    websitePrices, setWebsitePrices,
+    skuDescriptions, setSkuDescriptions,
     outgoingOrders, setOutgoingOrders,
     internalOrders, setInternalOrders,
     invoices, setInvoices,
@@ -216,6 +234,8 @@ export function useInventoryData(orgKey) {
     companyLogo, handleLogoUpload,
     poBackupHandle, updatePoBackupHandle,
     invoiceBackupHandle, updateInvoiceBackupHandle,
-    saveOutgoingOrder, deleteOutgoingOrder
+    saveOutgoingOrder, deleteOutgoingOrder,
+    expenses, setExpenses,
+    expenseCategories, setExpenseCategories
   };
 }

@@ -86,7 +86,7 @@ const InternalOrderModal = ({ order, customers, allSkus, cogs, onClose, onSave }
 };
 
 const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setInvoices, customers, cogs, settings }) => {
-    const { myCompany, companyLogo } = useInventory(); // Get company details, safe access later
+    const { myCompany, companyLogo, skuDescriptions } = useInventory();
     const [activeTab, setActiveTab] = useState('list');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingOrder, setEditingOrder] = useState(null);
@@ -153,14 +153,18 @@ const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setIn
         const customer = customers.find(c => c.id === Number(customerId));
         const logoDataUrl = await blobToDataURL(companyLogo);
 
-        const rowsHtml = lineItems.map(item => `
-        <tr style="border-bottom: 1px solid #eee;">
-            <td style="padding: 10px;">${item.sku}</td>
-            <td style="padding: 10px; text-align: right;">${item.count}</td>
-            <td style="padding: 10px; text-align: right;">$${Number(item.price).toFixed(2)}</td>
-            <td style="padding: 10px; text-align: right;">$${item.revenue.toFixed(2)}</td>
-        </tr>
-    `).join('');
+        const rowsHtml = lineItems.map(item => {
+            const desc = skuDescriptions?.[item.sku] || '';
+            return `
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 10px;">${item.sku}</td>
+                <td style="padding: 10px;">${desc}</td>
+                <td style="padding: 10px; text-align: right;">${item.count}</td>
+                <td style="padding: 10px; text-align: right;">$${Number(item.price).toFixed(2)}</td>
+                <td style="padding: 10px; text-align: right;">$${item.revenue.toFixed(2)}</td>
+            </tr>
+            `;
+        }).join('');
 
         return `
         <html>
@@ -232,7 +236,7 @@ const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setIn
             </div>
 
             <table>
-                <thead><tr><th>Description</th><th style="text-align: right;">Qty</th><th style="text-align: right;">Unit Price</th><th style="text-align: right;">Amount</th></tr></thead>
+                <thead><tr><th>SKU</th><th>Description</th><th style="text-align: right;">Qty</th><th style="text-align: right;">Unit Price</th><th style="text-align: right;">Amount</th></tr></thead>
                 <tbody>${rowsHtml}</tbody>
             </table>
 
@@ -295,7 +299,7 @@ const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setIn
     const deleteInvoice = (invId) => {
         if (confirm("Delete invoice? This will re-open the linked orders.")) {
             setInvoices(prev => prev.filter(i => i.id !== invId));
-            setInternalOrders(prev => prev.map(o => o.invoiceId === invId ? { ...o, invoiceId: null } : o));
+            setInternalOrders(prev => prev.map(o => o.invoiceId === invId ? { ...o, invoiceId: null, isPaid: false } : o));
             toast.success("Invoice deleted");
         }
     };
@@ -444,14 +448,15 @@ const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setIn
                                                         <button onClick={() => viewInvoice(inv)} className="text-gray-400 hover:text-gray-600" title="View Invoice">
                                                             <Printer className="w-4 h-4" />
                                                         </button>
+                                                        <button onClick={() => deleteInvoice(inv.id)} className="text-red-500 hover:text-red-700" title="Delete Invoice"><Trash2 className="w-4 h-4" /></button>
                                                     </div>
                                                 ) : (
-                                                    <div className="flex gap-2 mt-1">
+                                                    <div className="flex gap-2 mt-1 justify-end">
                                                         <button onClick={() => viewInvoice(inv)} className="text-gray-400 hover:text-gray-600" title="View Invoice">
                                                             <Printer className="w-4 h-4" />
                                                         </button>
                                                         <button onClick={() => markInvoicePaid(inv)} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200">Mark Paid</button>
-                                                        <button onClick={() => deleteInvoice(inv.id)} className="text-red-500 hover:text-red-700"><Trash2 className="w-4 h-4" /></button>
+                                                        <button onClick={() => deleteInvoice(inv.id)} className="text-red-500 hover:text-red-700" title="Delete Invoice"><Trash2 className="w-4 h-4" /></button>
                                                     </div>
                                                 )}
                                             </div>
