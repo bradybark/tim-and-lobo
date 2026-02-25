@@ -124,6 +124,7 @@ const CompanyDashboard = ({
   const [lastAutoBackupTime, setLastAutoBackupTime] = useState(null);
   const [autoBackupFolderHandle, setAutoBackupFolderHandle] = useState(null);
   const autoBackupLoadedRef = useRef(false);
+  const prepareDataRef = useRef(null);
   const { plannerData, leadTimeStats } = useDashboardMetrics({ snapshots, pos, settings, rateParams });
 
   // Handlers
@@ -149,6 +150,7 @@ const CompanyDashboard = ({
     snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders,
     internalOrders, invoices, websiteOrders, expenses, expenseCategories
   });
+  prepareDataRef.current = prepareDataPayload;
   const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64 }; };
 
   const handleExportDataOnly = () => { exportJsonBackup(prepareDataPayload(), `${orgKey}_data.json`); toast.success('Exported'); };
@@ -271,7 +273,7 @@ const CompanyDashboard = ({
     if (!dataLoaded || !autoBackupEnabled || !autoBackupLoadedRef.current) return;
     const runBackup = async () => {
       try {
-        const data = prepareDataPayload();
+        const data = prepareDataRef.current();
         const json = JSON.stringify(data, null, 2);
 
         if (autoBackupFolderHandle) {
