@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Plus, Download, Upload, Check, Trash2, ArrowLeft, FileText, Calendar, DollarSign, Eye, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { VendorCell } from '../components/VendorCell';
@@ -33,16 +34,22 @@ const PurchaseOrderSystem = ({
     pos, // List of PO documents
     updatePOs, // Function to update PO list
     vendors,
+    setVendors,
     skuImages,
     poBackupHandle,
     invoiceBackupHandle,
     myCompany,
-    companyLogo
+    companyLogo,
+    onOpenVendors
 }) => {
     const [viewMode, setViewMode] = useState('list'); // list, create
     const [previewPO, setPreviewPO] = useState(null);
     const [previewHtml, setPreviewHtml] = useState('');
     const [activeSubTab, setActiveSubTab] = useState('orders'); // orders, reports
+
+    // --- New Vendor Inline State ---
+    const [showNewVendorInput, setShowNewVendorInput] = useState(false);
+    const [newVendorName, setNewVendorName] = useState('');
 
     // --- Report State ---
     const [reportStartDate, setReportStartDate] = useState(() => {
@@ -399,7 +406,7 @@ const PurchaseOrderSystem = ({
 
     const savePO = async () => {
         if (!newPO.vendorId) {
-            alert("Please select a vendor");
+            toast.error("Please select a vendor");
             return;
         }
         const totalAmount = newPO.items.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
@@ -585,16 +592,72 @@ const PurchaseOrderSystem = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Vendor</label>
-                        <select
-                            className="mt-1 block w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2 border"
-                            value={newPO.vendorId}
-                            onChange={(e) => handleVendorSelect(e.target.value)}
-                        >
-                            <option value="">Select Vendor...</option>
-                            {vendors.map(v => (
-                                <option key={v.id} value={v.id}>{v.name?.name || v.name}</option>
-                            ))}
-                        </select>
+                        {!showNewVendorInput ? (
+                            <select
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2 border"
+                                value={newPO.vendorId}
+                                onChange={(e) => {
+                                    if (e.target.value === '__new__') {
+                                        setShowNewVendorInput(true);
+                                    } else {
+                                        handleVendorSelect(e.target.value);
+                                    }
+                                }}
+                            >
+                                <option value="">Select Vendor...</option>
+                                {vendors.map(v => (
+                                    <option key={v.id} value={v.id}>{v.name?.name || v.name}</option>
+                                ))}
+                                <option value="__new__">+ Create New Vendor</option>
+                            </select>
+                        ) : (
+                            <div className="mt-1 flex gap-2">
+                                <input
+                                    type="text"
+                                    autoFocus
+                                    className="flex-1 rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2 border text-sm"
+                                    placeholder="Vendor name..."
+                                    value={newVendorName}
+                                    onChange={(e) => setNewVendorName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                            setShowNewVendorInput(false);
+                                            setNewVendorName('');
+                                        }
+                                        if (e.key === 'Enter' && newVendorName.trim()) {
+                                            const id = Date.now();
+                                            setVendors(prev => [...prev, { id, name: newVendorName.trim() }]);
+                                            handleVendorSelect(id);
+                                            toast.success(`Vendor "${newVendorName.trim()}" created`);
+                                            setNewVendorName('');
+                                            setShowNewVendorInput(false);
+                                        }
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!newVendorName.trim()) return;
+                                        const id = Date.now();
+                                        setVendors(prev => [...prev, { id, name: newVendorName.trim() }]);
+                                        handleVendorSelect(id);
+                                        toast.success(`Vendor "${newVendorName.trim()}" created`);
+                                        setNewVendorName('');
+                                        setShowNewVendorInput(false);
+                                    }}
+                                    className="px-3 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700"
+                                >
+                                    Add
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowNewVendorInput(false); setNewVendorName(''); }}
+                                    className="px-2 py-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">PO Number</label>

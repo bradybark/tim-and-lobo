@@ -63,6 +63,7 @@ export function useInventoryData(orgKey) {
   const [companyLogo, setCompanyLogo] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [expenseCategories, setExpenseCategories] = useState([]);
+  const [lastModifiedAt, setLastModifiedAt] = useState(null);
 
   // File System Handles (Not part of JSON export)
   const [poBackupHandle, setPoBackupHandle] = useState(null);
@@ -85,7 +86,8 @@ export function useInventoryData(orgKey) {
           savedInternal, savedInvoices, savedWebsiteOrders,
           savedMyCompany, savedLogo,
           savedPoHandle, savedInvHandle,
-          savedExpenses, savedExpenseCategories
+          savedExpenses, savedExpenseCategories,
+          savedLastModifiedAt
         ] = await Promise.all([
           load(`${orgKey}_snapshots`, seeds.snapshots),
           load(`${orgKey}_pos`, seeds.pos),
@@ -105,7 +107,8 @@ export function useInventoryData(orgKey) {
           get(`${orgKey}_poBackupHandle`),
           get(`${orgKey}_invoiceBackupHandle`),
           load(`${orgKey}_expenses`, seeds.expenses),
-          load(`${orgKey}_expenseCategories`, seeds.expenseCategories)
+          load(`${orgKey}_expenseCategories`, seeds.expenseCategories),
+          get(`${orgKey}_lastModifiedAt`)
         ]);
 
         setSnapshots(savedSnaps || []);
@@ -126,6 +129,7 @@ export function useInventoryData(orgKey) {
         setInvoiceBackupHandle(savedInvHandle || null);
         setExpenses(savedExpenses || []);
         setExpenseCategories(savedExpenseCategories || seeds.expenseCategories || []);
+        setLastModifiedAt(savedLastModifiedAt || null);
 
         if (savedImages && typeof savedImages === 'object') {
           setSkuImages(savedImages);
@@ -147,6 +151,7 @@ export function useInventoryData(orgKey) {
     if (!dataLoaded) return;
 
     const handler = setTimeout(() => {
+      const now = new Date().toISOString();
       set(`${orgKey}_snapshots`, snapshots);
       set(`${orgKey}_pos`, pos);
       set(`${orgKey}_settings`, settings);
@@ -162,6 +167,8 @@ export function useInventoryData(orgKey) {
       set(`${orgKey}_myCompany`, myCompany);
       set(`${orgKey}_expenses`, expenses);
       set(`${orgKey}_expenseCategories`, expenseCategories);
+      set(`${orgKey}_lastModifiedAt`, now);
+      setLastModifiedAt(now);
 
       console.log('Auto-saved data to IDB');
     }, 1000);
@@ -236,6 +243,7 @@ export function useInventoryData(orgKey) {
     invoiceBackupHandle, updateInvoiceBackupHandle,
     saveOutgoingOrder, deleteOutgoingOrder,
     expenses, setExpenses,
-    expenseCategories, setExpenseCategories
+    expenseCategories, setExpenseCategories,
+    lastModifiedAt
   };
 }

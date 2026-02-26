@@ -105,7 +105,8 @@ const CompanyDashboard = ({
     invoiceBackupHandle, updateInvoiceBackupHandle,
     myCompany, companyLogo,
     expenses, setExpenses,
-    expenseCategories, setExpenseCategories
+    expenseCategories, setExpenseCategories,
+    lastModifiedAt
   } = useInventory();
 
   // Rate/Metrics/Cloud Logic
@@ -118,6 +119,9 @@ const CompanyDashboard = ({
   const [pendingReconnectHandle, setPendingReconnectHandle] = useState(null);
   const [pendingReconnectName, setPendingReconnectName] = useState('');
   const [reconnectDismissed, setReconnectDismissed] = useState(false);
+
+  // Conflict resolution dialog state
+  const [conflictData, setConflictData] = useState(null); // { fileData, handle, fileTime, browserTime }
 
   // Auto-backup state
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(true);
@@ -155,21 +159,36 @@ const CompanyDashboard = ({
 
   const handleExportDataOnly = () => { exportJsonBackup(prepareDataPayload(), `${orgKey}_data.json`); toast.success('Exported'); };
   const handleExportImagesOnly = async () => { toast.promise(async () => { const p = await prepareImagesPayload(); exportJsonBackup(p, `${orgKey}_images.json`); }, { loading: 'Packaging...', success: 'Done', error: 'Failed' }); };
-  const handleImportBackup = async (data) => {
-    if (data.snapshots) setSnapshots(data.snapshots);
-    if (data.pos) setPos(data.pos);
-    if (data.settings) setSettings(data.settings);
-    if (data.vendors) setVendors(data.vendors);
-    if (data.customers) setCustomers(data.customers);
-    if (data.cogs) setCogs(data.cogs);
-    if (data.websitePrices) setWebsitePrices(data.websitePrices); // NEW
-    if (data.outgoingOrders) setOutgoingOrders(data.outgoingOrders);
-    if (data.internalOrders) setInternalOrders(data.internalOrders);
-    if (data.invoices) setInvoices(data.invoices);
-    if (data.websiteOrders) setWebsiteOrders(data.websiteOrders);
-    if (data.expenses) setExpenses(data.expenses);
-    if (data.expenseCategories) setExpenseCategories(data.expenseCategories);
-    if (data.skuDescriptions) setSkuDescriptions(data.skuDescriptions);
+  const handleImportBackup = async (data, { forceOverwrite = false } = {}) => {
+    // Smart merge helpers: when linking a cloud file (forceOverwrite=false),
+    // skip overwriting a field if the file data is empty but current data has entries.
+    // This prevents accidentally deleting data when the sync file is stale/empty.
+    const mergeArray = (fileArr, currentArr, setter) => {
+      if (!fileArr) return;
+      if (!forceOverwrite && Array.isArray(fileArr) && fileArr.length === 0 && currentArr.length > 0) return;
+      setter(fileArr);
+    };
+    const mergeObj = (fileObj, currentObj, setter) => {
+      if (!fileObj) return;
+      if (!forceOverwrite && typeof fileObj === 'object' && Object.keys(fileObj).length === 0
+        && Object.keys(currentObj).length > 0) return;
+      setter(fileObj);
+    };
+
+    mergeArray(data.snapshots, snapshots, setSnapshots);
+    mergeArray(data.pos, pos, setPos);
+    mergeArray(data.settings, settings, setSettings);
+    mergeArray(data.vendors, vendors, setVendors);
+    mergeArray(data.customers, customers, setCustomers);
+    mergeObj(data.cogs, cogs, setCogs);
+    mergeObj(data.websitePrices, websitePrices, setWebsitePrices);
+    mergeArray(data.outgoingOrders, outgoingOrders, setOutgoingOrders);
+    mergeArray(data.internalOrders, internalOrders, setInternalOrders);
+    mergeArray(data.invoices, invoices, setInvoices);
+    mergeArray(data.websiteOrders, websiteOrders, setWebsiteOrders);
+    mergeArray(data.expenses, expenses, setExpenses);
+    mergeArray(data.expenseCategories, expenseCategories, setExpenseCategories);
+    mergeObj(data.skuDescriptions, skuDescriptions, setSkuDescriptions);
     if (data.skuImages) { setSkuImages(prev => ({ ...prev, ...data.skuImages })); }
     toast.success('Imported successfully');
   };
@@ -177,7 +196,59 @@ const CompanyDashboard = ({
   const handleExportExcelAction = () => exportPlannerExcel(plannerData, 'planner.xlsx');
   const handleExportAllAction = () => exportFullWorkbook({ plannerData, snapshots, pos }, 'full.xlsx');
   const handleExportLeadTimeAction = () => exportLeadTimeReport({ pos, settings }, 'leadtime.xlsx');
-  const handleLinkCloudFile = async () => { if (!window.showOpenFilePicker) return; try { const [handle] = await window.showOpenFilePicker({ types: [{ accept: { 'application/json': ['.json'] } }], multiple: false }); const file = await handle.getFile(); const text = await file.text(); try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { } await set(`${orgKey}_cloudFileHandle`, handle); setCloudFileHandle(handle); setCloudStatus(`Linked ${handle.name}`); setPendingReconnectHandle(null); setReconnectDismissed(false); } catch (e) { } };
+  // Helper to finish linking a cloud file (set handle, status, etc.)
+  const finishLink = async (handle) => {
+    await set(`${orgKey}_cloudFileHandle`, handle);
+    setCloudFileHandle(handle);
+    setCloudStatus(`Linked ${handle.name}`);
+    setPendingReconnectHandle(null);
+    setReconnectDismissed(false);
+  };
+
+  const handleLinkCloudFile = async () => {
+    if (!window.showOpenFilePicker) return;
+    try {
+      const [handle] = await window.showOpenFilePicker({ types: [{ accept: { 'application/json': ['.json'] } }], multiple: false });
+      const file = await handle.getFile();
+      const text = await file.text();
+      let json = null;
+      try { json = JSON.parse(text); } catch (e) { }
+
+      // If file is empty or unparseable, just start syncing browser data to it
+      if (!json || (typeof json === 'object' && Object.keys(json).length === 0)) {
+        await finishLink(handle);
+        toast.success('Linked — your data will sync to this file');
+        return;
+      }
+
+      const fileTime = json.exportedAt ? new Date(json.exportedAt).getTime() : null;
+      const browserTime = lastModifiedAt ? new Date(lastModifiedAt).getTime() : null;
+      const FIVE_MIN = 5 * 60 * 1000;
+
+      if (fileTime && browserTime) {
+        const diff = fileTime - browserTime;
+        if (diff > FIVE_MIN) {
+          // File is clearly newer — import from file
+          handleImportBackup(json);
+          await finishLink(handle);
+          return;
+        } else if (diff < -FIVE_MIN) {
+          // Browser is clearly newer — keep browser data, write to file
+          await finishLink(handle);
+          toast.success('Linked — your newer browser data will sync to file');
+          return;
+        }
+      }
+
+      // Ambiguous or missing timestamps — show conflict dialog
+      setConflictData({
+        fileData: json,
+        handle,
+        fileTime: json.exportedAt || 'Unknown',
+        browserTime: lastModifiedAt || 'Unknown'
+      });
+    } catch (e) { }
+  };
   const handleCreateShareLink = async (shorten) => { try { let url = createSnapshotUrl(prepareDataPayload()); if (shorten) { const s = await shortenUrl(url); if (s) url = s; } navigator.clipboard.writeText(url); toast.success("Copied"); } catch (e) { toast.error("Too large"); } };
   const handleOptimizeImages = async () => { const opt = await optimizeImageLibrary(skuImages); setSkuImages(opt); };
   const handlePruneData = (m) => { /* existing logic */ };
@@ -442,7 +513,7 @@ const CompanyDashboard = ({
           {parentTab === 'inventory' && activeTab === 'inventory' && has('inventoryLog') && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} />}
           {activeTab === 'pos' && has('purchaseOrders') && (
             poComponentType === 'PurchaseOrderSystem'
-              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} skuImages={skuImages} poBackupHandle={poBackupHandle} invoiceBackupHandle={invoiceBackupHandle} myCompany={myCompany} companyLogo={companyLogo} />
+              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} setVendors={setVendors} skuImages={skuImages} poBackupHandle={poBackupHandle} invoiceBackupHandle={invoiceBackupHandle} myCompany={myCompany} companyLogo={companyLogo} onOpenVendors={() => { setParentTab('inventory'); setActiveTab('vendors'); }} />
               : <POView pos={pos} handleAddPO={handleAddPO} toggleReceivePO={toggleReceivePO} updateReceivedDate={updateReceivedDate} deletePO={deletePO} skuImages={skuImages} vendors={vendors} updatePOVendor={updatePOVendor} addVendor={addVendor} />
           )}
           {parentTab === 'inventory' && activeTab === 'vendors' && <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />}
@@ -485,6 +556,69 @@ const CompanyDashboard = ({
           {activeTab === 'cogs' && <CogsManagerView cogs={cogs} setCogs={setCogs} websitePrices={websitePrices} setWebsitePrices={setWebsitePrices} skuDescriptions={skuDescriptions} setSkuDescriptions={setSkuDescriptions} settings={settings} setSettings={setSettings} skuImages={skuImages} handleImageUpload={handleImageUpload} onBack={() => setActiveTab('settings')} />}
         </main>
       </div>
+
+      {/* Conflict Resolution Dialog */}
+      {conflictData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 space-y-4">
+            <div className="relative flex items-center justify-center">
+              <div className="absolute left-0 p-2 rounded-full bg-amber-100 dark:bg-amber-800/50 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Data Conflict</h2>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Both the file and your browser have data. Which would you like to keep?
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">File</p>
+                <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">
+                  {conflictData.fileTime !== 'Unknown'
+                    ? new Date(conflictData.fileTime).toLocaleString()
+                    : 'Unknown time'}
+                </p>
+              </div>
+              <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Browser</p>
+                <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">
+                  {conflictData.browserTime !== 'Unknown'
+                    ? new Date(conflictData.browserTime).toLocaleString()
+                    : 'Unknown time'}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={async () => {
+                  await finishLink(conflictData.handle);
+                  setConflictData(null);
+                  toast.success('Linked — your browser data will sync to file');
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-sm font-semibold text-white transition-colors"
+              >
+                Keep Browser Data
+              </button>
+              <button
+                onClick={async () => {
+                  handleImportBackup(conflictData.fileData, { forceOverwrite: true });
+                  await finishLink(conflictData.handle);
+                  setConflictData(null);
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 transition-colors"
+              >
+                Use File Data
+              </button>
+            </div>
+            <button
+              onClick={() => setConflictData(null)}
+              className="w-full text-center text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
