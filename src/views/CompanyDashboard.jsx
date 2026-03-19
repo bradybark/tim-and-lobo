@@ -140,6 +140,7 @@ const CompanyDashboard = ({
   const handleClearPartnerShipping = () => {
     if (confirm("Clear all Partner Shipping amounts (Reset to $0)? This cannot be undone.")) {
       setOutgoingOrders(prev => prev.map(o => o.isPartnerShipping ? { ...o, isPartnerShipping: false } : o));
+      setWebsiteOrders(prev => prev.map(o => o.isPartnerShipping ? { ...o, isPartnerShipping: false } : o));
       toast.success("Partner shipping cleared");
     }
   };
@@ -419,7 +420,7 @@ const CompanyDashboard = ({
 
         <main className="mt-4 relative z-0">
           {parentTab === 'inventory' && activeTab === 'planner' && has('reorderPlanner') && <PlannerView plannerData={plannerData} skuImages={skuImages} handleImageUpload={handleImageUpload} updateSkuSetting={updateSkuSetting} handleExportExcel={handleExportExcelAction} handleExportAll={handleExportAllAction} rateParams={rateParams} setRateParams={setRateParams} />}
-          {parentTab === 'inventory' && activeTab === 'inventory' && has('inventoryLog') && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} />}
+          {parentTab === 'inventory' && activeTab === 'inventory' && has('inventoryLog') && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} cogs={cogs} />}
           {activeTab === 'pos' && has('purchaseOrders') && (
             poComponentType === 'PurchaseOrderSystem'
               ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} skuImages={skuImages} poBackupHandle={poBackupHandle} invoiceBackupHandle={invoiceBackupHandle} myCompany={myCompany} companyLogo={companyLogo} />
@@ -431,7 +432,7 @@ const CompanyDashboard = ({
           {parentTab === 'outgoing' && activeTab === 'outgoing' && has('outgoingOrders') && <OutgoingOrdersView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} customers={customers} cogs={cogs} settings={settings} companyLogo={companyLogo} />}
           {parentTab === 'outgoing' && activeTab === 'internal' && has('internalOrders') && <InternalOrdersView internalOrders={internalOrders} setInternalOrders={setInternalOrders} invoices={invoices} setInvoices={setInvoices} customers={customers} cogs={cogs} settings={settings} />}
           {parentTab === 'outgoing' && activeTab === 'website' && has('websiteOrders') && <WebsiteOrdersView websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} cogs={cogs} websitePrices={websitePrices} settings={settings} />}
-          {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && hasOutgoingSection && <OutgoingReportsView outgoingOrders={outgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} customers={customers} settings={settings} />}
+          {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && hasOutgoingSection && <OutgoingReportsView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} customers={customers} settings={settings} />}
 
           {parentTab === 'expenses' && activeTab === 'expenses-dashboard' && <ExpenseTrackingView expenses={expenses} setExpenses={setExpenses} expenseCategories={expenseCategories} setExpenseCategories={setExpenseCategories} />}
 

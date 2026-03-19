@@ -147,6 +147,7 @@ const OutgoingReportsView = ({
   outgoingOrders, setOutgoingOrders,
   internalOrders,
   websiteOrders,
+  setWebsiteOrders,
   customers,
 
 }) => {
@@ -159,16 +160,25 @@ const OutgoingReportsView = ({
   const [activeTab, setActiveTab] = useState('table');
   const [graphMetric, setGraphMetric] = useState('revenue');
 
-  // --- PARTNER SHIPPING TOTAL (Calculated from Outgoing Orders Only) ---
+  // --- PARTNER SHIPPING TOTAL (Calculated from Outgoing Orders and Website Orders) ---
   const globalPartnerShipping = useMemo(() => {
-    return outgoingOrders
+    const outgoingShipping = outgoingOrders
       .filter(o => o.isPartnerShipping)
       .reduce((sum, o) => sum + Number(o.shippingCost || 0), 0);
-  }, [outgoingOrders]);
+
+    const websiteShipping = websiteOrders
+      .filter(o => o.isPartnerShipping)
+      .reduce((sum, o) => sum + Number(o.costToShip || o.shippingCost || 0), 0);
+
+    return outgoingShipping + websiteShipping;
+  }, [outgoingOrders, websiteOrders]);
 
   const clearPartnerShipping = () => {
     if (confirm("Clear all partner shipping costs? This will reset the Partner Balance to $0.00.")) {
       setOutgoingOrders(prev => prev.map(o => o.isPartnerShipping ? { ...o, isPartnerShipping: false } : o));
+      if (setWebsiteOrders) {
+        setWebsiteOrders(prev => prev.map(o => o.isPartnerShipping ? { ...o, isPartnerShipping: false } : o));
+      }
       toast.success("Partner Shipping Balance Cleared");
     }
   };

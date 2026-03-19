@@ -1,6 +1,6 @@
 // src/views/InventoryLogView.jsx
-import React, { useMemo } from 'react';
-import { Plus } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, Calculator } from 'lucide-react';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { SkuImage } from '../components/SkuImage';
@@ -23,6 +23,7 @@ const InventoryLogView = ({
   deleteSnapshot,
   skuImages = {},
   pos = [],
+  cogs = {},
 }) => {
   const processedLog = useMemo(() => {
     if (!snapshots || snapshots.length === 0) return [];
@@ -85,6 +86,32 @@ const InventoryLogView = ({
 
   const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(processedLog, { key: 'date', direction: 'desc' });
 
+  const [showValuation, setShowValuation] = useState(false);
+
+  const valuationReport = useMemo(() => {
+    if (!snapshots || snapshots.length === 0) return { total: 0, items: [] };
+
+    const latestBySku = {};
+    snapshots.forEach((s) => {
+      if (!latestBySku[s.sku] || new Date(s.date) > new Date(latestBySku[s.sku].date)) {
+        latestBySku[s.sku] = s;
+      }
+    });
+
+    let totalValuation = 0;
+    const items = Object.values(latestBySku).map((snap) => {
+      const unitCost = cogs[snap.sku] || 0;
+      const value = snap.qty * unitCost;
+      totalValuation += value;
+      return { sku: snap.sku, qty: snap.qty, unitCost, value };
+    });
+
+    // Sort items by value descending
+    items.sort((a, b) => b.value - a.value);
+
+    return { total: totalValuation, items };
+  }, [snapshots, cogs]);
+
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
@@ -140,6 +167,86 @@ const InventoryLogView = ({
           </button>
         </form>
       </div>
+
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowValuation(!showValuation)}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 rounded-lg dark:text-indigo-400 dark:bg-indigo-900/40 dark:border-indigo-800 dark:hover:bg-indigo-900/60 transition-colors shadow-sm"
+        >
+          <Calculator className="w-4 h-4" />
+          {showValuation ? 'Hide Valuation Report' : 'View Valuation Report'}
+        </button>
+      </div>
+
+      {showValuation && (
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-2 border-indigo-100 dark:border-indigo-900/50">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-indigo-500" />
+                Inventory Valuation Report
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Based on latest counted quantities and current COGS.
+              </p>
+            </div>
+            <div className="text-left sm:text-right bg-indigo-50 dark:bg-indigo-900/30 px-4 py-3 rounded-lg border border-indigo-100 dark:border-indigo-800/50">
+              <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider mb-1">Total Valuation</div>
+              <div className="text-3xl font-bold text-indigo-700 dark:text-indigo-300">
+                ${valuationReport.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+          
+          <div className="overflow-hidden border rounded-lg dark:border-gray-700">
+            <div className="max-h-80 overflow-y-auto custom-scroll">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 relative">
+                <thead className="bg-gray-50 dark:bg-gray-700/80 sticky top-0 z-10 backdrop-blur-sm">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Product</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Latest Qty</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Unit COGS</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Total Value</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {valuationReport.items.map((item) => (
+                    <tr key={item.sku} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                      <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white">
+                        <div className="flex items-center">
+                          {skuImages[item.sku] && (
+                            <SkuImage
+                              data={skuImages[item.sku]}
+                              className="w-6 h-6 rounded mr-3 object-cover border border-gray-200 dark:border-gray-600 shadow-sm"
+                            />
+                          )}
+                          {item.sku}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-200">
+                        {item.qty.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">
+                        ${item.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-bold text-indigo-600 dark:text-indigo-400">
+                        ${item.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                  {valuationReport.items.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                        No inventory counts found. Add a count to see valuation.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
         <div className="overflow-x-auto custom-scroll pb-4">

@@ -14,6 +14,7 @@ const WebsiteOrderModal = ({ order, allSkus, cogs, websitePrices, onClose, onSav
     shippingCharge: order?.shippingCharge || 0,
     costToShip: order?.costToShip || 0,
     processingFee: order?.processingFee || 0,
+    isPartnerShipping: order?.isPartnerShipping || false,
     notes: order?.notes || ''
   }));
 
@@ -88,7 +89,16 @@ const WebsiteOrderModal = ({ order, allSkus, cogs, websitePrices, onClose, onSav
           <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div><label className="block text-xs font-medium text-gray-500 mb-1">Shipping Charge (Income)</label><input type="number" step="0.01" value={formData.shippingCharge} onChange={e => handleChange('shippingCharge', Number(e.target.value))} className="w-full p-2 border rounded text-right dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
-              <div><label className="block text-xs font-medium text-gray-500 mb-1">Cost to Ship (Expense)</label><input type="number" step="0.01" value={formData.costToShip} onChange={e => handleChange('costToShip', Number(e.target.value))} className="w-full p-2 border rounded text-right dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-medium text-gray-500">Cost to Ship (Expense)</label>
+                  <label className="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 cursor-pointer">
+                    <input type="checkbox" checked={formData.isPartnerShipping} onChange={e => setFormData({ ...formData, isPartnerShipping: e.target.checked })} className="rounded text-indigo-600 focus:ring-indigo-500" />
+                    Partner Pay?
+                  </label>
+                </div>
+                <input type="number" step="0.01" value={formData.costToShip} onChange={e => handleChange('costToShip', Number(e.target.value))} className="w-full p-2 border rounded text-right dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+              </div>
               <div className="col-span-2"><label className="block text-xs font-medium text-gray-500 mb-1">Processing Fee</label><input type="number" step="0.01" value={formData.processingFee} onChange={e => handleChange('processingFee', Number(e.target.value))} className="w-full p-2 border rounded text-right dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
             </div>
             <div className="border-t border-gray-200 dark:border-gray-700 pt-3 space-y-1 text-sm">
