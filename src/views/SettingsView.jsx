@@ -52,7 +52,7 @@ const SettingsView = ({
     const file = e.target.files?.[0];
     if (!file || !onImportBackup) return;
     const reader = new FileReader();
-    reader.onload = () => { try { const json = JSON.parse(reader.result); onImportBackup(json); } catch (err) { console.error(err); toast.error('Invalid JSON'); } };
+    reader.onload = () => { try { const json = JSON.parse(reader.result); onImportBackup(json, { forceOverwrite: true }); } catch (err) { console.error(err); toast.error('Invalid JSON'); } };
     reader.readAsText(file);
     e.target.value = '';
   };
