@@ -35,6 +35,26 @@ const blobToDataURL = (blob) => {
   });
 };
 
+const dataURLtoBlob = (dataurl) => {
+    if (!dataurl || typeof dataurl !== 'string') return null;
+    try {
+        let arr = dataurl.split(',');
+        let mimeMatch = arr[0].match(/:(.*?);/);
+        if (!mimeMatch) return null;
+        let mime = mimeMatch[1];
+        let bstr = atob(arr[1]);
+        let n = bstr.length;
+        let u8arr = new Uint8Array(n);
+        while(n--){
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], {type:mime});
+    } catch (e) {
+        console.error("Failed to convert dataURL to Blob", e);
+        return null;
+    }
+};
+
 // --- ORDER MODAL COMPONENT ---
 const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyLogo: propLogo, outgoingOrders }) => {
   const { myCompany, companyLogo: contextLogo, skuDescriptions } = useInventory();
@@ -53,6 +73,7 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
     adjustment: order?.adjustment || 0,
     adjustmentNote: order?.adjustmentNote || '',
     tracking: order?.tracking || '',
+    shippingCompany: order?.shippingCompany || '',
     isPaid: order?.isPaid || false,
     filePO: order?.filePO || null,
     fileInvoice: order?.fileInvoice || null
@@ -269,7 +290,15 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
                 <tbody>${itemsRows}</tbody>
             </table>
 
-            <div class="totals">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="flex: 1; padding-right: 20px;">
+                    ${formData.tracking || formData.shippingCompany ? `
+                    <div style="background: #f9f9f9; padding: 15px; border-radius: 5px; border: 1px solid #eee; display: inline-block; min-width: 250px;">
+                        <h3 class="section-title" style="margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Tracking Information ${formData.shippingCompany ? `<span style="color: #ccc; margin: 0 8px;">|</span><span style="color: #666; font-weight: normal; text-transform: uppercase;">${formData.shippingCompany}</span>` : ''}</h3>
+                        ${formData.tracking ? `<p style="margin: 8px 0 0 0; font-size: 14px; font-weight: bold; color: #333;">${formData.tracking}</p>` : ''}
+                    </div>
+                    ` : ''}
+                </div>
                 <div class="totals-box">
                     <div class="total-row"><span>Subtotal</span><span>${formatMoney(subTotal)}</span></div>
                     ${Number(formData.adjustment) !== 0 ? `<div class="total-row"><span>Adjustment ${formData.adjustmentNote ? `(${formData.adjustmentNote})` : ''}</span><span>${formatMoney(formData.adjustment)}</span></div>` : ''}
@@ -405,9 +434,16 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-gray-200 dark:border-gray-700 pt-4">
             <div className="space-y-4">
               <div><label className="block text-xs font-medium text-gray-500">Tracking Number</label><input type="text" value={formData.tracking} onChange={e => setFormData({ ...formData, tracking: e.target.value })} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
+              <div><label className="block text-xs font-medium text-gray-500">Shipping Company</label><input type="text" placeholder="e.g. UPS, FedEx, USPS" value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
               <div className="flex gap-4">
-                <FileUploader label="Upload PO" currentFile={formData.filePO} onUpload={(f) => setFormData(prev => ({ ...prev, filePO: f }))} />
-                <FileUploader label="Upload Invoice" currentFile={formData.fileInvoice} onUpload={(f) => setFormData(prev => ({ ...prev, fileInvoice: f }))} />
+                <FileUploader label="Upload PO" currentFile={formData.filePO} onUpload={async (f) => {
+                  const b64 = await blobToDataURL(f);
+                  setFormData(prev => ({ ...prev, filePO: b64 }));
+                }} />
+                <FileUploader label="Upload Invoice" currentFile={formData.fileInvoice} onUpload={async (f) => {
+                  const b64 = await blobToDataURL(f);
+                  setFormData(prev => ({ ...prev, fileInvoice: b64 }));
+                }} />
               </div>
               <div className="flex items-center gap-2 pt-2"><input type="checkbox" id="isPaid" checked={formData.isPaid} onChange={e => setFormData({ ...formData, isPaid: e.target.checked })} className="w-4 h-4 text-green-600 rounded" /><label htmlFor="isPaid" className="text-sm font-medium text-gray-700 dark:text-gray-300">Order Paid</label></div>
             </div>
@@ -494,13 +530,26 @@ const OutgoingOrdersView = (props) => {
 
   const handleViewFile = (file) => {
     if (!file) return;
-    if (file instanceof Blob || file instanceof File) {
-      const url = URL.createObjectURL(file);
-      window.open(url, '_blank');
-    } else if (typeof file === 'string') {
-      window.open(file, '_blank');
-    } else {
-      toast.error('File format not supported for viewing.');
+    try {
+      if (file instanceof Blob || file instanceof File) {
+        const url = URL.createObjectURL(file);
+        window.open(url, '_blank');
+      } else if (typeof file === 'string' && file.startsWith('data:')) {
+        const blob = dataURLtoBlob(file);
+        if (blob) {
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        } else {
+            toast.error('File data is corrupted.');
+        }
+      } else if (typeof file === 'string') {
+        window.open(file, '_blank');
+      } else {
+        toast.error('File format not supported for viewing.');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to open file.');
     }
   };
 
@@ -569,6 +618,7 @@ const OutgoingOrdersView = (props) => {
               <tr>
                 <SortableHeaderCell label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.date} />
                 <SortableHeaderCell label="PO Number" sortKey="poNumber" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.poNumber} />
+                <SortableHeaderCell label="Invoice #" sortKey="invoiceNumber" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.invoiceNumber} />
                 <SortableHeaderCell label="Customer" sortKey="customerId" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.customerId} />
                 <th className="px-6 py-3">Items</th>
                 <SortableHeaderCell label="Total" sortKey="total" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.total} />
@@ -587,6 +637,7 @@ const OutgoingOrdersView = (props) => {
                   <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="px-6 py-4">{order.date}</td>
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{order.poNumber}</td>
+                    <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{order.invoiceNumber || '-'}</td>
                     <td className="px-6 py-4">{cust ? cust.company : 'Unknown'}</td>
                     <td className="px-6 py-4">{(order.items || []).length} SKUs</td>
                     <td className="px-6 py-4 font-medium">${total.toLocaleString()}</td>

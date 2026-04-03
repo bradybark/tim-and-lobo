@@ -105,7 +105,9 @@ const CompanyDashboard = ({
     invoiceBackupHandle, updateInvoiceBackupHandle,
     myCompany, companyLogo,
     expenses, setExpenses,
-    expenseCategories, setExpenseCategories
+    expenseCategories, setExpenseCategories,
+    cogsHistory, setCogsHistory,
+    shipments, setShipments
   } = useInventory();
 
   // Rate/Metrics/Cloud Logic
@@ -148,7 +150,7 @@ const CompanyDashboard = ({
   const prepareDataPayload = () => ({
     version: 2, orgKey, companyName, exportedAt: new Date().toISOString(),
     snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders,
-    internalOrders, invoices, websiteOrders, expenses, expenseCategories
+    internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments
   });
   const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64 }; };
 
@@ -168,6 +170,8 @@ const CompanyDashboard = ({
     if (data.websiteOrders) setWebsiteOrders(data.websiteOrders);
     if (data.expenses) setExpenses(data.expenses);
     if (data.expenseCategories) setExpenseCategories(data.expenseCategories);
+    if (data.cogsHistory) setCogsHistory(data.cogsHistory);
+    if (data.shipments) setShipments(data.shipments);
     if (data.skuImages) { setSkuImages(prev => ({ ...prev, ...data.skuImages })); }
     toast.success('Imported successfully');
   };
@@ -312,7 +316,7 @@ const CompanyDashboard = ({
     };
     const timer = setTimeout(syncData, 2000);
     return () => clearTimeout(timer);
-  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, skuImages, dataLoaded]);
+  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, skuImages, dataLoaded]);
 
 
 
@@ -423,8 +427,8 @@ const CompanyDashboard = ({
           {parentTab === 'inventory' && activeTab === 'inventory' && has('inventoryLog') && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} cogs={cogs} />}
           {activeTab === 'pos' && has('purchaseOrders') && (
             poComponentType === 'PurchaseOrderSystem'
-              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} skuImages={skuImages} poBackupHandle={poBackupHandle} invoiceBackupHandle={invoiceBackupHandle} myCompany={myCompany} companyLogo={companyLogo} />
-              : <POView pos={pos} handleAddPO={handleAddPO} toggleReceivePO={toggleReceivePO} updateReceivedDate={updateReceivedDate} deletePO={deletePO} skuImages={skuImages} vendors={vendors} updatePOVendor={updatePOVendor} addVendor={addVendor} />
+              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} skuImages={skuImages} poBackupHandle={poBackupHandle} invoiceBackupHandle={invoiceBackupHandle} myCompany={myCompany} companyLogo={companyLogo} cogs={cogs} setCogs={setCogs} snapshots={snapshots} setSnapshots={setSnapshots} cogsHistory={cogsHistory} setCogsHistory={setCogsHistory} shipments={shipments} setShipments={setShipments} />
+              : <POView pos={pos} handleAddPO={handleAddPO} toggleReceivePO={toggleReceivePO} updateReceivedDate={updateReceivedDate} deletePO={deletePO} skuImages={skuImages} vendors={vendors} updatePOVendor={updatePOVendor} addVendor={addVendor} cogs={cogs} setCogs={setCogs} snapshots={snapshots} setSnapshots={setSnapshots} cogsHistory={cogsHistory} setCogsHistory={setCogsHistory} shipments={shipments} setShipments={setShipments} updatePOs={setPos} />
           )}
           {parentTab === 'inventory' && activeTab === 'vendors' && <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />}
           {parentTab === 'inventory' && activeTab === 'reports' && has('reports') && <ReportsView leadTimeStats={leadTimeStats} onExportLeadTimeReport={handleExportLeadTimeAction} snapshots={snapshots} pos={pos} />}
@@ -463,7 +467,7 @@ const CompanyDashboard = ({
             />
           )}
           {activeTab === 'customers' && <CustomerManagerView customers={customers} setCustomers={setCustomers} cogs={cogs} settings={settings} onBack={() => setActiveTab('settings')} />}
-          {activeTab === 'cogs' && <CogsManagerView cogs={cogs} setCogs={setCogs} websitePrices={websitePrices} setWebsitePrices={setWebsitePrices} skuDescriptions={skuDescriptions} setSkuDescriptions={setSkuDescriptions} settings={settings} setSettings={setSettings} skuImages={skuImages} handleImageUpload={handleImageUpload} onBack={() => setActiveTab('settings')} />}
+          {activeTab === 'cogs' && <CogsManagerView cogs={cogs} setCogs={setCogs} websitePrices={websitePrices} setWebsitePrices={setWebsitePrices} skuDescriptions={skuDescriptions} setSkuDescriptions={setSkuDescriptions} settings={settings} setSettings={setSettings} skuImages={skuImages} handleImageUpload={handleImageUpload} onBack={() => setActiveTab('settings')} cogsHistory={cogsHistory} setCogsHistory={setCogsHistory} />}
         </main>
       </div>
     </div>

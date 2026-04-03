@@ -1,6 +1,6 @@
 // src/views/POView.jsx
 import React, { useMemo } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Package, Check, X } from 'lucide-react';
 import { VendorCell } from '../components/VendorCell';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
@@ -27,7 +27,17 @@ const POView = ({
   vendors,
   updatePOVendor,
   addVendor,
+  cogs = {}, setCogs,
+  snapshots = [], setSnapshots,
+  cogsHistory = [], setCogsHistory,
+  shipments = [], setShipments,
+  updatePOs
 }) => {
+  const [activeSubTab, setActiveSubTab] = React.useState('orders');
+  const [receivingPO, setReceivingPO] = React.useState(null);
+  const [receiveForm, setReceiveForm] = React.useState({ receivedQty: 0, cogs: 0, currentShelfQty: 0 });
+
+  const formatMoney = (amount) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
   const getDiffColor = (days) => {
     if (days > 0) return 'text-green-600 dark:text-green-400';
     if (days < 0) return 'text-red-600 dark:text-red-400';
@@ -56,7 +66,89 @@ const POView = ({
 
   const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(preparedPos, { key: 'orderDate', direction: 'desc' });
 
-  return (
+  const handleOpenReceive = (p) => {
+      const snaps = snapshots.filter(s => s.sku === p.sku).sort((a,b) => new Date(b.date) - new Date(a.date));
+      const currentStock = snaps[0]?.qty || 0;
+      setReceiveForm({
+          receivedQty: p.qty,
+          cogs: cogs[p.sku] || 0,
+          currentShelfQty: currentStock
+      });
+      setReceivingPO(p);
+  };
+
+  const handleConfirmReceive = () => {
+      const now = new Date().toISOString();
+      const poUpdates = [...pos];
+      const poIndex = poUpdates.findIndex(p => p.id === receivingPO.id);
+      
+      let newCogsState = { ...cogs };
+      let newSnapshots = [...snapshots];
+      let newCogsHistory = [...(cogsHistory || [])];
+      
+      const receivedQty = Number(receiveForm.receivedQty) || 0;
+      const shipmentCogs = Number(receiveForm.cogs) || 0;
+      const currentStock = Number(receiveForm.currentShelfQty) || 0;
+      const currentAvgCogs = Number(cogs[receivingPO.sku]) || 0;
+
+      const totalCurrentValue = currentStock * currentAvgCogs;
+      const totalReceivedValue = receivedQty * shipmentCogs;
+      const newTotalStock = currentStock + receivedQty;
+      const newAvgCogs = newTotalStock > 0 ? (totalCurrentValue + totalReceivedValue) / newTotalStock : shipmentCogs;
+
+      // 1. Update Global COGS
+      newCogsState[receivingPO.sku] = newAvgCogs;
+
+      // 2. Log History
+      newCogsHistory.push({
+          id: Date.now() + Math.random(),
+          sku: receivingPO.sku,
+          date: now,
+          poNumber: receivingPO.poNumber,
+          oldAvgCogs: currentAvgCogs,
+          receivedCogs: shipmentCogs,
+          newAvgCogs: newAvgCogs,
+          receivedQty,
+          previousQty: currentStock
+      });
+
+      // 3. Update Snapshot
+      newSnapshots.push({
+          id: Date.now() + Math.random(),
+          sku: receivingPO.sku,
+          qty: newTotalStock,
+          date: now.split('T')[0]
+      });
+
+      // 4. Shipments trace
+      const newShipments = [...(shipments || [])];
+      newShipments.push({
+          poId: receivingPO.id,
+          poNumber: receivingPO.poNumber,
+          vendorId: receivingPO.vendor, // In POView, vendor might just be name or ID string
+          date: now,
+          items: [{ sku: receivingPO.sku, qty: receivedQty, cogs: shipmentCogs }]
+      });
+
+      // Update PO Status
+      if (poIndex > -1) {
+          poUpdates[poIndex] = {
+              ...poUpdates[poIndex],
+              received: true,
+              receivedDate: now.split('T')[0]
+          };
+      }
+
+      if (setCogs) setCogs(newCogsState);
+      if (setSnapshots) setSnapshots(newSnapshots);
+      if (setCogsHistory) setCogsHistory(newCogsHistory);
+      if (setShipments) setShipments(newShipments);
+      if (updatePOs) updatePOs(poUpdates);
+      
+      setReceivingPO(null);
+  };
+
+  const renderOrdersList = () => (
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
         <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
@@ -245,17 +337,23 @@ const POView = ({
                       </td>
 
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleReceivePO(p.id)}
-                          className={`text-xs px-2 py-1 rounded border ${
-                            p.received
-                              ? 'border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                              : 'border-green-600 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900'
-                          }`}
-                        >
-                          {p.received ? 'Undo' : 'Receive'}
-                        </button>
+                        {p.received ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleReceivePO(p.id)}
+                            className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            Undo
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReceive(p)}
+                            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-green-600 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900"
+                          >
+                             <Package className="w-3 h-3" /> Receive
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => deletePO(p.id)}
@@ -283,6 +381,138 @@ const POView = ({
         </div>
       </div>
     </div>
+  );
+
+  const renderShipments = () => (
+    <div className="space-y-6">
+        <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+            <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Shipments History</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Track incoming items and COGS changes over time</p>
+            </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PO Number</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items Received</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        {(!shipments || shipments.length === 0) ? (
+                            <tr><td colSpan={3} className="px-6 py-8 text-center text-gray-500 text-sm">No shipments received yet. Receive a PO to log a shipment.</td></tr>
+                        ) : shipments.sort((a,b) => new Date(b.date) - new Date(a.date)).map((shipment, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">{formatDate(shipment.date)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">{shipment.poNumber}</td>
+                                <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                                    <div className="flex flex-col gap-1">
+                                        {shipment.items.map((i, iidx) => (
+                                            <div key={iidx} className="flex justify-between max-w-xs text-xs bg-gray-100 dark:bg-gray-900 px-2 py-1 rounded border border-gray-200 dark:border-gray-700">
+                                                <span className="font-semibold px-2">{i.sku}</span>
+                                                <span className="bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-2 font-medium border-l border-gray-200 dark:border-gray-700">{i.qty} units @ {formatMoney(i.cogs || 0)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+  );
+
+  return (
+      <div className="space-y-6">
+          {/* Tab Bar */}
+          <div className="flex gap-4 border-b border-gray-200 dark:border-gray-700">
+              <button 
+                  onClick={() => setActiveSubTab('orders')} 
+                  className={`pb-2 px-4 font-medium ${activeSubTab === 'orders' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                  Purchase Orders
+              </button>
+              <button 
+                  onClick={() => setActiveSubTab('shipments')} 
+                  className={`pb-2 px-4 font-medium ${activeSubTab === 'shipments' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                  Shipments History
+              </button>
+          </div>
+
+          {activeSubTab === 'orders' && renderOrdersList()}
+          {activeSubTab === 'shipments' && renderShipments()}
+
+          {/* Receive Modal */}
+          {receivingPO && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+                      <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 rounded-t-xl">
+                          <div>
+                              <h2 className="text-xl font-bold dark:text-white">Receive Shipment</h2>
+                              <p className="text-sm text-gray-500">PO: {receivingPO.poNumber}</p>
+                          </div>
+                          <button onClick={() => setReceivingPO(null)} className="text-gray-500 hover:text-gray-700"><X className="w-5 h-5" /></button>
+                      </div>
+                      <div className="p-6 overflow-y-auto flex-1">
+                          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6 border border-blue-100 dark:border-blue-800">
+                              <p className="text-sm text-blue-800 dark:text-blue-300">
+                                  <strong>How perfectly weighted average COGS works here:</strong> Input the unit cost you paid (COGS). Verify your 'Current Shelf Qty' is accurate before saving. We'll automatically adjust the global COGS using pure math!
+                              </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                              <div className="col-span-2">
+                                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">SKU</label>
+                                  <div className="p-2 bg-gray-100 dark:bg-gray-900 rounded border dark:border-gray-700 font-medium dark:text-white text-sm">{receivingPO.sku}</div>
+                              </div>
+                              <div>
+                                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Received Qty</label>
+                                  <input 
+                                      type="number" 
+                                      className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                                      value={receiveForm.receivedQty}
+                                      onChange={(e) => setReceiveForm({...receiveForm, receivedQty: e.target.value})}
+                                  />
+                                  <div className="text-xs text-gray-500 mt-1">Expected: {receivingPO.qty}</div>
+                              </div>
+                              <div>
+                                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Incoming COGS (EA)</label>
+                                  <div className="relative">
+                                      <span className="absolute left-3 top-2 text-gray-500">$</span>
+                                      <input 
+                                          type="number" step="0.01" 
+                                          className="w-full p-2 pl-6 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                                          value={receiveForm.cogs}
+                                          onChange={(e) => setReceiveForm({...receiveForm, cogs: e.target.value})}
+                                      />
+                                  </div>
+                              </div>
+                              <div className="col-span-2">
+                                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Current Shelf Qty</label>
+                                  <input 
+                                      type="number" 
+                                      className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                                      value={receiveForm.currentShelfQty}
+                                      onChange={(e) => setReceiveForm({...receiveForm, currentShelfQty: e.target.value})}
+                                  />
+                                  <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">Pre-filled from your latest inventory snapshot.</div>
+                              </div>
+                          </div>
+                      </div>
+                      <div className="p-6 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 flex justify-end gap-3 rounded-b-xl">
+                          <button onClick={() => setReceivingPO(null)} className="px-4 py-2 border rounded text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 transition">Cancel</button>
+                          <button onClick={handleConfirmReceive} className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 shadow flex items-center gap-2 font-medium transition">
+                              <Check className="w-4 h-4" /> Save Receipt & Update Info
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          )}
+      </div>
   );
 };
 

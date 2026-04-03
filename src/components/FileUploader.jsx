@@ -18,7 +18,7 @@ export function FileUploader({ onUpload, currentFile, className = '', label = 'U
     e.target.value = ''; // Reset
   };
 
-  const isFile = currentFile instanceof Blob || currentFile instanceof File;
+  const isFile = currentFile instanceof Blob || currentFile instanceof File || (typeof currentFile === 'string' && currentFile.startsWith('data:'));
 
   return (
     <div className={`relative ${className}`}>

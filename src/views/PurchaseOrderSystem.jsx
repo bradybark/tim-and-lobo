@@ -63,6 +63,8 @@ const PurchaseOrderSystem = ({
         termType: 'Due on Receipt',
         termDays: 0,
         // Ship To Address fields
+        isDropShip: false,
+        dropShipRecipient: '',
         shipAddress: '',
         shipAddress2: '',
         shipCity: '',
@@ -259,7 +261,7 @@ const PurchaseOrderSystem = ({
                 </div>
                 <div class="address-box">
                     <h3>Ship To</h3>
-                    <div class="address-name">${myCompany?.name || ''}</div>
+                    <div class="address-name">${po.isDropShip && po.dropShipRecipient ? po.dropShipRecipient : (myCompany?.name || '')}</div>
                     <div class="address-info">
                         ${shipAddr}${shipAddr ? '<br>' : ''}
                         ${shipAddr2 ? `${shipAddr2}<br>` : ''}
@@ -332,6 +334,8 @@ const PurchaseOrderSystem = ({
             termType: 'Due on Receipt',
             termDays: 0,
             // Pre-fill Ship To from company profile
+            isDropShip: false,
+            dropShipRecipient: '',
             shipAddress: myCompany?.address1 || '',
             shipAddress2: myCompany?.address2 || '',
             shipCity: myCompany?.city || '',
@@ -351,6 +355,8 @@ const PurchaseOrderSystem = ({
         setNewPO({
             ...po,
             termDays: po.termDays || 0,
+            isDropShip: po.isDropShip || false,
+            dropShipRecipient: po.dropShipRecipient || '',
             shipAddress: po.shipAddress || myCompany?.address1 || '',
             shipAddress2: po.shipAddress2 || myCompany?.address2 || '',
             shipCity: po.shipCity || myCompany?.city || '',
@@ -641,7 +647,30 @@ const PurchaseOrderSystem = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t pt-4 dark:border-gray-700">
                     {/* Ship To */}
                     <div className="space-y-4">
-                        <h3 className="text-lg font-medium dark:text-white">Ship To</h3>
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-medium dark:text-white">Ship To</h3>
+                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                <input 
+                                    type="checkbox" 
+                                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                    checked={newPO.isDropShip || false}
+                                    onChange={(e) => setNewPO({...newPO, isDropShip: e.target.checked})}
+                                />
+                                Drop Ship Order?
+                            </label>
+                        </div>
+                        {newPO.isDropShip && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Recipient Name / Company</label>
+                                <input
+                                    type="text"
+                                    placeholder="Enter drop ship recipient name..."
+                                    className="mt-1 block w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2 border"
+                                    value={newPO.dropShipRecipient || ''}
+                                    onChange={(e) => setNewPO({ ...newPO, dropShipRecipient: e.target.value })}
+                                />
+                            </div>
+                        )}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Address Line 1</label>
                             <input

@@ -23,7 +23,9 @@ const LEGACY_SEEDS = {
     websiteOrders: LOBO_WEBSITE_ORDERS,
     myCompany: LOBO_MY_COMPANY,
     expenses: LOBO_EXPENSES || [],
-    expenseCategories: LOBO_EXPENSE_CATEGORIES || ['Freight', 'Inventory Samples', 'Software', 'Advertising', 'Taxes', 'Supplies', 'Bank Fees', 'Other']
+    expenseCategories: LOBO_EXPENSE_CATEGORIES || ['Freight', 'Inventory Samples', 'Software', 'Advertising', 'Taxes', 'Supplies', 'Bank Fees', 'Other'],
+    cogsHistory: [],
+    shipments: []
   },
   timothy: {
     snapshots: TIMOTHY_SNAPSHOTS,
@@ -39,7 +41,9 @@ const LEGACY_SEEDS = {
     websiteOrders: TIMOTHY_WEBSITE_ORDERS,
     myCompany: TIMOTHY_MY_COMPANY,
     expenses: TIMOTHY_EXPENSES || [],
-    expenseCategories: TIMOTHY_EXPENSE_CATEGORIES || ['Freight', 'Inventory Samples', 'Software', 'Advertising', 'Taxes', 'Supplies', 'Bank Fees', 'Other']
+    expenseCategories: TIMOTHY_EXPENSE_CATEGORIES || ['Freight', 'Inventory Samples', 'Software', 'Advertising', 'Taxes', 'Supplies', 'Bank Fees', 'Other'],
+    cogsHistory: [],
+    shipments: []
   }
 };
 
@@ -63,6 +67,8 @@ export function useInventoryData(orgKey) {
   const [companyLogo, setCompanyLogo] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [expenseCategories, setExpenseCategories] = useState([]);
+  const [cogsHistory, setCogsHistory] = useState([]);
+  const [shipments, setShipments] = useState([]);
 
   // File System Handles (Not part of JSON export)
   const [poBackupHandle, setPoBackupHandle] = useState(null);
@@ -85,7 +91,7 @@ export function useInventoryData(orgKey) {
           savedInternal, savedInvoices, savedWebsiteOrders,
           savedMyCompany, savedLogo,
           savedPoHandle, savedInvHandle,
-          savedExpenses, savedExpenseCategories
+          savedExpenses, savedExpenseCategories, savedCogsHistory, savedShipments
         ] = await Promise.all([
           load(`${orgKey}_snapshots`, seeds.snapshots),
           load(`${orgKey}_pos`, seeds.pos),
@@ -105,8 +111,26 @@ export function useInventoryData(orgKey) {
           get(`${orgKey}_poBackupHandle`),
           get(`${orgKey}_invoiceBackupHandle`),
           load(`${orgKey}_expenses`, seeds.expenses),
-          load(`${orgKey}_expenseCategories`, seeds.expenseCategories)
+          load(`${orgKey}_expenseCategories`, seeds.expenseCategories),
+          load(`${orgKey}_cogsHistory`, seeds.cogsHistory),
+          load(`${orgKey}_shipments`, seeds.shipments)
         ]);
+
+        if (orgKey === 'lobo') {
+            const hasSeeded = (savedCogsHistory || []).some(h => h.poNumber === 'Initial Seed' && h.sku === 'TSB8');
+            if (!hasSeeded) {
+                const seedData = [
+                    { id: 'seed-1', sku: 'TSB8', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 6.606, newAvgCogs: 6.606, receivedQty: 0, previousQty: 0 },
+                    { id: 'seed-2', sku: 'MST22', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 6.262, newAvgCogs: 6.262, receivedQty: 0, previousQty: 0 },
+                    { id: 'seed-3', sku: 'MST18', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 6.062, newAvgCogs: 6.062, receivedQty: 0, previousQty: 0 },
+                    { id: 'seed-4', sku: 'MST12', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 5.562, newAvgCogs: 5.562, receivedQty: 0, previousQty: 0 },
+                    { id: 'seed-5', sku: 'TTSB85', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 6.137, newAvgCogs: 6.137, receivedQty: 0, previousQty: 0 },
+                    { id: 'seed-6', sku: 'ACT', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 5.15, newAvgCogs: 5.15, receivedQty: 0, previousQty: 0 }
+                ];
+                savedCogsHistory = [...(savedCogsHistory || []), ...seedData];
+                await set(`${orgKey}_cogsHistory`, savedCogsHistory);
+            }
+        }
 
         setSnapshots(savedSnaps || []);
         setPos(savedPos || []);
@@ -126,6 +150,8 @@ export function useInventoryData(orgKey) {
         setInvoiceBackupHandle(savedInvHandle || null);
         setExpenses(savedExpenses || []);
         setExpenseCategories(savedExpenseCategories || seeds.expenseCategories || []);
+        setCogsHistory(savedCogsHistory || []);
+        setShipments(savedShipments || []);
 
         if (savedImages && typeof savedImages === 'object') {
           setSkuImages(savedImages);
@@ -162,12 +188,14 @@ export function useInventoryData(orgKey) {
       set(`${orgKey}_myCompany`, myCompany);
       set(`${orgKey}_expenses`, expenses);
       set(`${orgKey}_expenseCategories`, expenseCategories);
+      set(`${orgKey}_cogsHistory`, cogsHistory);
+      set(`${orgKey}_shipments`, shipments);
 
       console.log('Auto-saved data to IDB');
     }, 1000);
 
     return () => clearTimeout(handler);
-  }, [snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, expenses, expenseCategories, orgKey, dataLoaded]);
+  }, [snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, expenses, expenseCategories, cogsHistory, shipments, orgKey, dataLoaded]);
 
   // Handle Updates
   const updatePoBackupHandle = useCallback(async (handle) => {
@@ -236,6 +264,8 @@ export function useInventoryData(orgKey) {
     invoiceBackupHandle, updateInvoiceBackupHandle,
     saveOutgoingOrder, deleteOutgoingOrder,
     expenses, setExpenses,
-    expenseCategories, setExpenseCategories
+    expenseCategories, setExpenseCategories,
+    cogsHistory, setCogsHistory,
+    shipments, setShipments
   };
 }
