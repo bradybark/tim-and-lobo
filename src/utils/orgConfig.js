@@ -23,7 +23,7 @@ const DEFAULT_ORGS = [
     name: 'Company B',
     description: 'Simplified PO tracking only.',
     themeColor: '#10b981', // Emerald (Green)
-    features: ['purchaseOrders'],
+    features: ['purchaseOrders', 'quotes'],
     poComponent: 'PurchaseOrderSystem'
   }
 ];

@@ -69,6 +69,7 @@ export function useInventoryData(orgKey) {
   const [expenseCategories, setExpenseCategories] = useState([]);
   const [cogsHistory, setCogsHistory] = useState([]);
   const [shipments, setShipments] = useState([]);
+  const [quotes, setQuotes] = useState([]);
   const [lastModifiedAt, setLastModifiedAt] = useState(null);
 
   // File System Handles (Not part of JSON export)
@@ -92,7 +93,7 @@ export function useInventoryData(orgKey) {
           savedInternal, savedInvoices, savedWebsiteOrders,
           savedMyCompany, savedLogo,
           savedPoHandle, savedInvHandle,
-          savedExpenses, savedExpenseCategories, savedCogsHistory, savedShipments, savedLastModifiedAt
+          savedExpenses, savedExpenseCategories, savedCogsHistory, savedShipments, savedQuotes, savedLastModifiedAt
         ] = await Promise.all([
           load(`${orgKey}_snapshots`, seeds.snapshots),
           load(`${orgKey}_pos`, seeds.pos),
@@ -115,6 +116,7 @@ export function useInventoryData(orgKey) {
           load(`${orgKey}_expenseCategories`, seeds.expenseCategories),
           load(`${orgKey}_cogsHistory`, seeds.cogsHistory),
           load(`${orgKey}_shipments`, seeds.shipments),
+          load(`${orgKey}_quotes`, []),
           get(`${orgKey}_lastModifiedAt`)
         ]);
 
@@ -154,6 +156,7 @@ export function useInventoryData(orgKey) {
         setExpenseCategories(savedExpenseCategories || seeds.expenseCategories || []);
         setCogsHistory(savedCogsHistory || []);
         setShipments(savedShipments || []);
+        setQuotes(savedQuotes || []);
         setLastModifiedAt(savedLastModifiedAt || null);
 
         if (savedImages && typeof savedImages === 'object') {
@@ -194,6 +197,7 @@ export function useInventoryData(orgKey) {
       set(`${orgKey}_expenseCategories`, expenseCategories);
       set(`${orgKey}_cogsHistory`, cogsHistory);
       set(`${orgKey}_shipments`, shipments);
+      set(`${orgKey}_quotes`, quotes);
       set(`${orgKey}_lastModifiedAt`, now);
       setLastModifiedAt(now);
 
@@ -201,7 +205,7 @@ export function useInventoryData(orgKey) {
     }, 1000);
 
     return () => clearTimeout(handler);
-  }, [snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, expenses, expenseCategories, cogsHistory, shipments, orgKey, dataLoaded]);
+  }, [snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, expenses, expenseCategories, cogsHistory, shipments, quotes, orgKey, dataLoaded]);
 
   // Handle Updates
   const updatePoBackupHandle = useCallback(async (handle) => {
@@ -273,6 +277,7 @@ export function useInventoryData(orgKey) {
     expenseCategories, setExpenseCategories,
     cogsHistory, setCogsHistory,
     shipments, setShipments,
+    quotes, setQuotes,
     lastModifiedAt
   };
 }

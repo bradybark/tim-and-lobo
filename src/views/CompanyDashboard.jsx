@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Package, ClipboardList, Truck, Sun, Moon, ArrowLeft, Settings as SettingsIcon, AlertTriangle, BarChart3,
-  Box, TrendingUp, RefreshCw, Globe, DollarSign, Link2, X
+  Box, TrendingUp, RefreshCw, Globe, DollarSign, Link2, X, FileText as FileTextIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { get, set } from 'idb-keyval';
@@ -21,6 +21,7 @@ import CogsManagerView from './CogsManagerView';
 import InternalOrdersView from './InternalOrdersView';
 import WebsiteOrdersView from './WebsiteOrdersView';
 import ExpenseTrackingView from './ExpenseTrackingView';
+import QuotesView from './QuotesView';
 
 import { useInventory } from '../context/InventoryContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
@@ -63,6 +64,7 @@ const CompanyDashboard = ({
 
   // Check if any outgoing features are enabled
   const hasOutgoingSection = has('outgoingOrders') || has('internalOrders') || has('websiteOrders');
+  const hasQuotesSection = has('quotes');
 
   // Helper to get initial tab
   const getInitialTab = () => {
@@ -108,6 +110,7 @@ const CompanyDashboard = ({
     expenseCategories, setExpenseCategories,
     cogsHistory, setCogsHistory,
     shipments, setShipments,
+    quotes, setQuotes,
     lastModifiedAt
   } = useInventory();
 
@@ -155,7 +158,7 @@ const CompanyDashboard = ({
   const prepareDataPayload = () => ({
     version: 2, orgKey, companyName, exportedAt: new Date().toISOString(),
     snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders,
-    internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments
+    internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, quotes
   });
   prepareDataRef.current = prepareDataPayload;
   const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64 }; };
@@ -194,6 +197,7 @@ const CompanyDashboard = ({
     mergeArray(data.expenseCategories, expenseCategories, setExpenseCategories);
     mergeArray(data.cogsHistory, cogsHistory, setCogsHistory);
     mergeArray(data.shipments, shipments, setShipments);
+    mergeArray(data.quotes, quotes, setQuotes);
     if (data.skuImages) { setSkuImages(prev => ({ ...prev, ...data.skuImages })); }
     toast.success('Imported successfully');
   };
@@ -407,7 +411,7 @@ const CompanyDashboard = ({
     };
     const timer = setTimeout(syncData, 2000);
     return () => clearTimeout(timer);
-  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, skuImages, dataLoaded]);
+  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, quotes, skuImages, dataLoaded]);
 
 
 
@@ -431,6 +435,11 @@ const CompanyDashboard = ({
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ].filter(Boolean);
 
+  // Build quotes tabs
+  const quotesTabs = [
+    { id: 'quotes-list', label: 'Quotes', icon: FileTextIcon },
+  ];
+
   // Build expenses tabs
   const expensesTabs = [
     { id: 'expenses-dashboard', label: 'Expense Tracking', icon: DollarSign },
@@ -438,6 +447,7 @@ const CompanyDashboard = ({
 
   // Select current tabs based on parent tab
   const currentTabs = parentTab === 'outgoing' && hasOutgoingSection ? outgoingTabs
+    : parentTab === 'quotes' && hasQuotesSection ? quotesTabs
     : parentTab === 'expenses' ? expensesTabs
       : inventoryTabs;
 
@@ -464,10 +474,15 @@ const CompanyDashboard = ({
           </button>
         </header>
 
-        {hasOutgoingSection && (
+        {(hasOutgoingSection || hasQuotesSection) && (
           <div className="flex p-1 space-x-1 bg-gray-200 dark:bg-gray-800 rounded-xl w-fit">
             <button onClick={() => { setParentTab('inventory'); setActiveTab(has('inventoryLog') ? 'inventory' : 'pos'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'inventory' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Inventory</button>
-            <button onClick={() => { setParentTab('outgoing'); setActiveTab(has('outgoingOrders') ? 'outgoing' : 'internal'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'outgoing' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Outgoing Orders</button>
+            {hasOutgoingSection && (
+              <button onClick={() => { setParentTab('outgoing'); setActiveTab(has('outgoingOrders') ? 'outgoing' : 'internal'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'outgoing' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Outgoing Orders</button>
+            )}
+            {hasQuotesSection && (
+              <button onClick={() => { setParentTab('quotes'); setActiveTab('quotes-list'); }} className={`flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'quotes' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}><FileTextIcon className="w-4 h-4" /> Quotes</button>
+            )}
             <button onClick={() => { setParentTab('expenses'); setActiveTab('expenses-dashboard'); }} className={`flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'expenses' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}><DollarSign className="w-4 h-4" /> Expenses</button>
           </div>
         )}
@@ -530,6 +545,8 @@ const CompanyDashboard = ({
           {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && hasOutgoingSection && <OutgoingReportsView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} customers={customers} settings={settings} />}
 
           {parentTab === 'expenses' && activeTab === 'expenses-dashboard' && <ExpenseTrackingView expenses={expenses} setExpenses={setExpenses} expenseCategories={expenseCategories} setExpenseCategories={setExpenseCategories} />}
+
+          {parentTab === 'quotes' && activeTab === 'quotes-list' && hasQuotesSection && <QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} myCompany={myCompany} companyLogo={companyLogo} />}
 
 
           {activeTab === 'settings' && (
