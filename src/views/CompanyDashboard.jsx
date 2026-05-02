@@ -158,10 +158,10 @@ const CompanyDashboard = ({
   const prepareDataPayload = () => ({
     version: 2, orgKey, companyName, exportedAt: new Date().toISOString(),
     snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders,
-    internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, quotes
+    internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, quotes, myCompany
   });
   prepareDataRef.current = prepareDataPayload;
-  const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64 }; };
+  const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } let logoBase64 = null; if (companyLogo) { if (typeof companyLogo === 'string') { logoBase64 = companyLogo; } else { const url = URL.createObjectURL(companyLogo); logoBase64 = await urlToBase64(url); URL.revokeObjectURL(url); } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64, companyLogo: logoBase64 }; };
 
   const handleExportDataOnly = () => { exportJsonBackup(prepareDataPayload(), `${orgKey}_data.json`); toast.success('Exported'); };
   const handleExportImagesOnly = async () => { toast.promise(async () => { const p = await prepareImagesPayload(); exportJsonBackup(p, `${orgKey}_images.json`); }, { loading: 'Packaging...', success: 'Done', error: 'Failed' }); };
@@ -198,7 +198,9 @@ const CompanyDashboard = ({
     mergeArray(data.cogsHistory, cogsHistory, setCogsHistory);
     mergeArray(data.shipments, shipments, setShipments);
     mergeArray(data.quotes, quotes, setQuotes);
+    mergeObj(data.myCompany, myCompany, setMyCompany);
     if (data.skuImages) { setSkuImages(prev => ({ ...prev, ...data.skuImages })); }
+    if (data.companyLogo) { handleLogoUpload(data.companyLogo); }
     toast.success('Imported successfully');
   };
 
@@ -401,7 +403,7 @@ const CompanyDashboard = ({
       try {
         const data = prepareDataPayload();
         const images = await prepareImagesPayload();
-        const fullPayload = { ...data, skuImages: images.skuImages };
+        const fullPayload = { ...data, skuImages: images.skuImages, companyLogo: images.companyLogo };
         const writable = await cloudFileHandle.createWritable();
         await writable.write(JSON.stringify(fullPayload, null, 2));
         await writable.close();

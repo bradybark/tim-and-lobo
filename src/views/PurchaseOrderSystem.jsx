@@ -89,7 +89,7 @@ const PurchaseOrderSystem = ({
 
     // --- Document Handling State ---
     const fileInputRef = useRef(null);
-    const [uploadingPoId, setUploadingPoId] = useState(null);
+    const [receivingPO, setReceivingPO] = useState(null);
 
     // Filter out legacy POs
     const validPOs = useMemo(() => pos.filter(p => p.items && Array.isArray(p.items)), [pos]);
@@ -488,68 +488,129 @@ const PurchaseOrderSystem = ({
     const selectedVendor = vendors.find(v => v.id == newPO.vendorId);
 
     const handleUploadClick = (poId) => {
-        setUploadingPoId(poId);
-        fileInputRef.current?.click();
+        const po = pos.find(p => p.id === poId);
+        if (!po) return;
+        setReceivingPO({
+            po,
+            items: po.items.map(item => ({ ...item, orderedQty: item.qty, receivedQty: item.qty })),
+            invoiceDate: new Date().toISOString().split('T')[0],
+            file: null
+        });
     };
 
-    const handleFileChange = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file || !uploadingPoId) return;
+    const handleReceiveSubmit = async () => {
+        if (!receivingPO) return;
+        
+        const { po, items, invoiceDate, file } = receivingPO;
+        if (!invoiceDate) {
+            toast.error("Invoice Date is required");
+            return;
+        }
 
-        const invoiceDate = prompt("Enter Invoice Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
-        if (!invoiceDate) return;
+        const hasBackorders = items.some(item => item.receivedQty < item.orderedQty);
 
-        const reader = new FileReader();
-        reader.onload = async (evt) => {
-            const result = evt.target.result;
+        let newDoc = null;
+        if (file) {
+            try {
+                const base64Data = await blobToBase64(file);
+                newDoc = {
+                    id: Date.now(),
+                    name: file.name,
+                    type: 'invoice',
+                    data: base64Data,
+                    date: new Date().toISOString()
+                };
+            } catch (err) {
+                console.error("Error reading file", err);
+                toast.error("Failed to read file.");
+                return;
+            }
+        }
 
-            const updatedPOs = pos.map(p => {
-                if (p.id === uploadingPoId) {
-                    const newDoc = {
-                        id: Date.now(),
-                        name: file.name,
-                        type: 'invoice',
-                        data: result,
-                        date: new Date().toISOString()
-                    };
+        const termsDays = getTermDays(po.termType, po.termDays);
+        const iDate = new Date(invoiceDate);
+        iDate.setDate(iDate.getDate() + termsDays);
+        const dueDate = !isNaN(iDate.getTime()) ? iDate.toISOString().split('T')[0] : '';
 
-                    // Use helper function to get correct term days
-                    const termsDays = getTermDays(p.termType, p.termDays);
+        let finalPoNumber = po.poNumber;
+        if (po.poNumber.endsWith('-BO')) {
+            finalPoNumber = po.poNumber.replace('-BO', '-1');
+            let counter = 1;
+            while(pos.some(p => p.id !== po.id && p.poNumber === finalPoNumber)) {
+                counter++;
+                finalPoNumber = po.poNumber.replace('-BO', `-${counter}`);
+            }
+        }
 
-                    const iDate = new Date(invoiceDate);
-                    iDate.setDate(iDate.getDate() + termsDays);
-                    const dueDate = !isNaN(iDate.getTime()) ? iDate.toISOString().split('T')[0] : '';
-
-                    return {
-                        ...p,
-                        documents: [...(p.documents || []), newDoc],
-                        status: 'Received',
-                        invoiceDate: invoiceDate,
-                        dueDate: dueDate
-                    };
-                }
-                return p;
+        const updatedOriginalItems = items
+            .filter(item => item.receivedQty > 0)
+            .map(item => {
+                const { orderedQty, receivedQty, ...rest } = item;
+                return { ...rest, qty: receivedQty };
             });
-            updatePOs(updatedPOs);
+            
+        const originalTotal = updatedOriginalItems.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
 
-            if (invoiceBackupHandle) {
-                try {
-                    const po = pos.find(p => p.id === uploadingPoId);
-                    const fileName = `${po.poNumber}_INV_${file.name}`;
-                    const fileHandle = await invoiceBackupHandle.getFileHandle(fileName, { create: true });
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(file);
-                    await writable.close();
-                } catch (err) {
-                    console.error("Invoice backup failed", err);
-                    alert("Failed to save invoice info to backup folder.");
-                }
+        const updatedOriginalPo = {
+            ...po,
+            poNumber: finalPoNumber,
+            items: updatedOriginalItems,
+            totalAmount: originalTotal,
+            status: 'Received',
+            invoiceDate: invoiceDate,
+            dueDate: dueDate,
+            documents: newDoc ? [...(po.documents || []), newDoc] : (po.documents || [])
+        };
+
+        let newPOsList = pos.map(p => p.id === po.id ? updatedOriginalPo : p);
+
+        if (hasBackorders) {
+            const backorderItems = items
+                .filter(item => item.orderedQty > item.receivedQty)
+                .map(item => {
+                    const { orderedQty, receivedQty, ...rest } = item;
+                    return { ...rest, qty: orderedQty - receivedQty };
+                });
+            
+            const backorderTotal = backorderItems.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
+
+            let boNumber = po.poNumber;
+            if (!boNumber.includes('-BO')) {
+                boNumber = `${boNumber}-BO`;
             }
 
-            setUploadingPoId(null);
-        };
-        reader.readAsDataURL(file);
-        e.target.value = '';
+            const backorderPo = {
+                ...po,
+                id: Date.now() + 1,
+                poNumber: boNumber,
+                items: backorderItems,
+                totalAmount: backorderTotal,
+                status: 'Sent',
+                invoiceDate: '',
+                dueDate: '',
+                documents: []
+            };
+
+            newPOsList = [...newPOsList, backorderPo];
+        }
+
+        updatePOs(newPOsList);
+        
+        if (invoiceBackupHandle && file) {
+            try {
+                const fileName = `${finalPoNumber}_INV_${file.name}`;
+                const fileHandle = await invoiceBackupHandle.getFileHandle(fileName, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(file);
+                await writable.close();
+            } catch (err) {
+                console.error("Invoice backup failed", err);
+                toast.error("Failed to save invoice to backup folder.");
+            }
+        }
+
+        setReceivingPO(null);
+        toast.success(hasBackorders ? "Invoice matched & Backorder PO created" : "Invoice matched & PO Received");
     };
 
     const downloadDocument = (doc) => {
@@ -945,7 +1006,6 @@ const PurchaseOrderSystem = ({
     // --- List View ---
     const renderOrdersList = () => (
         <div className="space-y-6">
-            <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.png,.jpg,.jpeg" onChange={handleFileChange} />
 
             <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
                 <div>
@@ -1214,6 +1274,91 @@ const PurchaseOrderSystem = ({
 
             {activeSubTab === 'orders' && renderOrdersList()}
             {activeSubTab === 'reports' && renderReports()}
+
+            {/* Receiving Modal */}
+            {receivingPO && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-3xl w-full mx-4 p-6 space-y-6 max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-center border-b pb-4 dark:border-gray-700">
+                            <h2 className="text-xl font-bold dark:text-white">Receive PO {receivingPO.po.poNumber}</h2>
+                            <button onClick={() => setReceivingPO(null)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Invoice Date</label>
+                                <input
+                                    type="date"
+                                    className="w-full rounded-md border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-white p-2 border text-sm"
+                                    value={receivingPO.invoiceDate}
+                                    onChange={(e) => setReceivingPO({ ...receivingPO, invoiceDate: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Upload Invoice</label>
+                                <input
+                                    type="file"
+                                    accept=".pdf,.png,.jpg,.jpeg"
+                                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-700 dark:file:text-gray-300"
+                                    onChange={(e) => setReceivingPO({ ...receivingPO, file: e.target.files?.[0] || null })}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 className="text-lg font-medium dark:text-white mb-2">Verify Items Received</h3>
+                            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                    <thead className="bg-gray-100 dark:bg-gray-800">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Ordered</th>
+                                            <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Received</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                        {receivingPO.items.map((item, idx) => (
+                                            <tr key={item.id || idx}>
+                                                <td className="px-4 py-2 text-sm text-gray-900 dark:text-white">{item.sku}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{item.description}</td>
+                                                <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{item.orderedQty}</td>
+                                                <td className="px-4 py-2 text-right">
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max={item.orderedQty}
+                                                        className="w-20 text-sm text-right border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white p-1"
+                                                        value={item.receivedQty}
+                                                        onChange={(e) => {
+                                                            let val = parseFloat(e.target.value);
+                                                            if (isNaN(val) || val < 0) val = 0;
+                                                            if (val > item.orderedQty) val = item.orderedQty;
+                                                            const newItems = [...receivingPO.items];
+                                                            newItems[idx] = { ...item, receivedQty: val };
+                                                            setReceivingPO({ ...receivingPO, items: newItems });
+                                                        }}
+                                                    />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p className="mt-2 text-xs text-gray-500">
+                                Any items with a received quantity less than the ordered quantity will automatically be split into a new Backorder PO.
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-4 border-t dark:border-gray-700">
+                            <button onClick={() => setReceivingPO(null)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600">Cancel</button>
+                            <button onClick={handleReceiveSubmit} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700">Receive & Save</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
