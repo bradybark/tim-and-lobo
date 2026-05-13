@@ -622,6 +622,7 @@ const OutgoingOrdersView = (props) => {
                 <SortableHeaderCell label="Customer" sortKey="customerId" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.customerId} />
                 <th className="px-6 py-3">Items</th>
                 <SortableHeaderCell label="Total" sortKey="total" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.total} />
+                <th className="px-6 py-3">Profit</th>
                 <SortableHeaderCell label="Status" sortKey="isPaid" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.isPaid} />
                 <th className="px-6 py-3 text-right">Actions</th>
               </tr>
@@ -629,18 +630,36 @@ const OutgoingOrdersView = (props) => {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {/* FIX: Check if processedData exists */}
               {(!processedData || processedData.length === 0) ? (
-                <tr><td colSpan="7" className="p-8 text-center text-gray-500">No orders found.</td></tr>
+                <tr><td colSpan="8" className="p-8 text-center text-gray-500">No orders found.</td></tr>
               ) : processedData.map(order => {
                 const cust = customers.find(c => c.id === order.customerId);
                 const total = (order.items || []).reduce((sum, i) => sum + (i.count * i.price), 0) + (order.adjustment || 0);
+                const totalCogs = (order.items || []).reduce((sum, i) => sum + (i.count * (i.unitCost || cogs[i.sku] || 0)), 0) + (order.processingFee || 0) + (order.shippingCost || 0);
+                const orderProfit = total - totalCogs;
+                const orderMargin = total > 0 ? (orderProfit / total) * 100 : 0;
                 return (
                   <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                     <td className="px-6 py-4">{order.date}</td>
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{order.poNumber}</td>
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{order.invoiceNumber || '-'}</td>
                     <td className="px-6 py-4">{cust ? cust.company : 'Unknown'}</td>
-                    <td className="px-6 py-4">{(order.items || []).length} SKUs</td>
+                    <td className="px-6 py-4 relative group cursor-default">
+                      <span>{(order.items || []).length} SKUs</span>
+                      {(order.items || []).length > 0 && (
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block z-50">
+                          <div className="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg py-2 px-3 shadow-lg whitespace-nowrap">
+                            {(order.items || []).map((item, i) => (
+                              <div key={i} className="py-0.5">{item.sku} × {item.count}</div>
+                            ))}
+                            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
+                          </div>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-6 py-4 font-medium">${total.toLocaleString()}</td>
+                    <td className={`px-6 py-4 font-medium ${orderProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+                      {formatMoney(orderProfit)} <span className="text-xs opacity-75">({orderMargin.toFixed(1)}%)</span>
+                    </td>
                     <td className="px-6 py-4">
                       {(() => {
                         if (order.isPaid) {
