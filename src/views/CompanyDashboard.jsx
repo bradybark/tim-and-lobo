@@ -199,7 +199,13 @@ const CompanyDashboard = ({
     mergeArray(data.shipments, shipments, setShipments);
     mergeArray(data.quotes, quotes, setQuotes);
     mergeObj(data.myCompany, myCompany, setMyCompany);
-    if (data.skuImages) { setSkuImages(prev => ({ ...prev, ...data.skuImages })); }
+    if (data.skuImages) { 
+        setSkuImages(prev => {
+            const merged = { ...prev, ...data.skuImages };
+            set(`${orgKey}_images`, merged).catch(console.error);
+            return merged;
+        }); 
+    }
     if (data.companyLogo) { handleLogoUpload(data.companyLogo); }
     toast.success('Imported successfully');
   };
@@ -413,7 +419,7 @@ const CompanyDashboard = ({
     };
     const timer = setTimeout(syncData, 2000);
     return () => clearTimeout(timer);
-  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, quotes, skuImages, dataLoaded]);
+  }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, quotes, skuImages, myCompany, companyLogo, dataLoaded]);
 
 
 
