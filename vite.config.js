@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt', // Required for the custom pop-up logic
+      registerType: 'autoUpdate',
       includeAssets: ['vite.svg', 'maskable-icon.svg'],
       manifest: {
         name: 'Lobo Tools Inventory Manager',
@@ -34,7 +34,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         cleanupOutdatedCaches: true,
-        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024 // 3MB to accommodate large bundles
+        clientsClaim: true,
+        skipWaiting: true,
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024
       },
       devOptions: {
         enabled: true
