@@ -6,6 +6,7 @@ import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { FileUploader } from '../components/FileUploader';
 import { toast } from 'sonner';
 import { useInventory } from '../context/InventoryContext';
+import CustomerSalesReportModal from '../components/CustomerSalesReportModal';
 
 
 
@@ -515,6 +516,7 @@ const OutgoingOrdersView = (props) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [search, setSearch] = useState('');
+  const [reportCustomer, setReportCustomer] = useState(null);
 
   // Setup table sorting/filtering with safety checks
   const filteredData = useMemo(() => {
@@ -642,7 +644,15 @@ const OutgoingOrdersView = (props) => {
                     <td className="px-6 py-4">{order.date}</td>
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{order.poNumber}</td>
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{order.invoiceNumber || '-'}</td>
-                    <td className="px-6 py-4">{cust ? cust.company : 'Unknown'}</td>
+                    <td className="px-6 py-4">
+                      {cust ? (
+                        <button onClick={() => setReportCustomer(cust)} className="hover:underline text-indigo-600 dark:text-indigo-400 font-medium">
+                          {cust.company}
+                        </button>
+                      ) : (
+                        'Unknown'
+                      )}
+                    </td>
                     <td className="px-6 py-4 relative group cursor-default">
                       <span>{(order.items || []).length} SKUs</span>
                       {(order.items || []).length > 0 && (
@@ -716,6 +726,13 @@ const OutgoingOrdersView = (props) => {
           outgoingOrders={outgoingOrders}
           onClose={() => setIsModalOpen(false)}
           onSave={handleSave}
+        />
+      )}
+
+      {reportCustomer && (
+        <CustomerSalesReportModal 
+          customer={reportCustomer} 
+          onClose={() => setReportCustomer(null)} 
         />
       )}
     </div>

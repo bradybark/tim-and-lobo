@@ -5,6 +5,7 @@ import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { toast } from 'sonner';
 import { useInventory } from '../context/InventoryContext'; // To access myCompany
+import CustomerSalesReportModal from '../components/CustomerSalesReportModal';
 
 const blobToDataURL = (blob) => {
     return new Promise((resolve) => {
@@ -93,6 +94,7 @@ const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setIn
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [reportCustomer, setReportCustomer] = useState('');
     const [reportEndDate, setReportEndDate] = useState(new Date().toISOString().split('T')[0]);
+    const [salesReportCustomer, setSalesReportCustomer] = useState(null);
 
     const allSkus = (settings || []).map(s => s.sku);
 
@@ -354,7 +356,11 @@ const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setIn
                                     <tr key={row.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                                         <td className="px-6 py-4"><input type="checkbox" checked={selectedIds.has(row.id)} onChange={() => toggleSelection(row.id)} /></td>
                                         <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">{row.date}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium">{row.customerName}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 font-medium">
+                                          <button onClick={() => setSalesReportCustomer(customers.find(c => c.id === Number(row.customerId)))} className="hover:underline text-indigo-600 dark:text-indigo-400">
+                                            {row.customerName}
+                                          </button>
+                                        </td>
                                         <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">{row.displaySku}</td>
                                         <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white">{row.count}</td>
                                         <td className="px-6 py-4 text-sm text-right text-gray-900 dark:text-white font-medium">${row.revenue.toLocaleString()}</td>
@@ -476,6 +482,13 @@ const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setIn
                 setIsModalOpen(false);
                 toast.success("Order Saved");
             }} />}
+
+            {salesReportCustomer && (
+                <CustomerSalesReportModal 
+                    customer={salesReportCustomer} 
+                    onClose={() => setSalesReportCustomer(null)} 
+                />
+            )}
         </div>
     );
 };

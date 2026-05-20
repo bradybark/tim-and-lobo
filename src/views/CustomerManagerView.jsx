@@ -1,11 +1,13 @@
 // src/views/CustomerManagerView.jsx
 import React, { useState } from 'react';
-import { ArrowLeft, Plus, Edit2, Trash2, DollarSign, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Plus, Edit2, Trash2, DollarSign, CheckCircle2, BarChart2 } from 'lucide-react';
 import PricingRecordView from './PricingRecordView';
+import CustomerSalesReportModal from '../components/CustomerSalesReportModal';
 
 const CustomerManagerView = ({ customers, setCustomers, cogs, settings, onBack }) => {
   const [editingId, setEditingId] = useState(null);
   const [pricingCustomerId, setPricingCustomerId] = useState(null);
+  const [reportCustomer, setReportCustomer] = useState(null);
 
   const handleSave = (e) => {
     e.preventDefault();
@@ -190,8 +192,9 @@ const CustomerManagerView = ({ customers, setCustomers, cogs, settings, onBack }
                   </div>
                 </td>
                 <td className="px-6 py-4 text-right text-sm font-medium space-x-3">
-                  <button onClick={() => setEditingId(c.id)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400"><Edit2 className="w-4 h-4" /></button>
-                  <button onClick={() => deleteCustomer(c.id)} className="text-red-600 hover:text-red-900 dark:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                  <button onClick={() => setReportCustomer(c)} className="text-emerald-600 hover:text-emerald-900 dark:text-emerald-400" title="View Sales Report"><BarChart2 className="w-4 h-4 inline" /></button>
+                  <button onClick={() => setEditingId(c.id)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400"><Edit2 className="w-4 h-4 inline" /></button>
+                  <button onClick={() => deleteCustomer(c.id)} className="text-red-600 hover:text-red-900 dark:text-red-400"><Trash2 className="w-4 h-4 inline" /></button>
                 </td>
               </tr>
             ))}
@@ -199,6 +202,13 @@ const CustomerManagerView = ({ customers, setCustomers, cogs, settings, onBack }
           </tbody>
         </table>
       </div>
+
+      {reportCustomer && (
+        <CustomerSalesReportModal 
+          customer={reportCustomer} 
+          onClose={() => setReportCustomer(null)} 
+        />
+      )}
     </div>
   );
 };
