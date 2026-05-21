@@ -25,6 +25,10 @@ const CogsManagerView = ({
   const [newSku, setNewSku] = useState('');
   const [viewHistorySku, setViewHistorySku] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('list'); // 'list' | 'report'
+  const [showAddHistorical, setShowAddHistorical] = useState(false);
+  const [histDate, setHistDate] = useState('');
+  const [histNote, setHistNote] = useState('Pre-System Import');
+  const [histCogs, setHistCogs] = useState('');
 
   // Report States
   const [reportSku, setReportSku] = useState('');
@@ -105,6 +109,32 @@ const CogsManagerView = ({
 
     setNewSku('');
     toast.success(`SKU "${trimmed}" added to system`);
+  };
+
+  const handleAddHistorical = () => {
+    if (!histDate || !histCogs) {
+      toast.error('Date and COGS amount are required.');
+      return;
+    }
+    const newEntry = {
+      id: Date.now() + Math.random(),
+      sku: viewHistorySku,
+      date: new Date(histDate + 'T12:00:00').toISOString(),
+      poNumber: histNote || 'Historical Entry',
+      oldAvgCogs: parseFloat(histCogs),
+      receivedCogs: parseFloat(histCogs),
+      newAvgCogs: parseFloat(histCogs),
+      receivedQty: 0,
+      previousQty: 0,
+      isHistorical: true
+    };
+    const updated = [...(cogsHistory || []), newEntry];
+    if (setCogsHistory) setCogsHistory(updated);
+    setHistDate('');
+    setHistNote('Pre-System Import');
+    setHistCogs('');
+    setShowAddHistorical(false);
+    toast.success('Historical data point added!');
   };
 
   return (
@@ -315,8 +345,70 @@ const CogsManagerView = ({
                 <h2 className="text-xl font-bold dark:text-white">COGS History</h2>
                 <p className="text-sm text-gray-500">SKU: {viewHistorySku}</p>
               </div>
-              <button onClick={() => setViewHistorySku(null)} className="text-gray-500 hover:text-gray-700"><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setShowAddHistorical(!showAddHistorical)} 
+                  className="text-sm font-medium px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add Historical Data
+                </button>
+                <button onClick={() => { setViewHistorySku(null); setShowAddHistorical(false); }} className="text-gray-500 hover:text-gray-700"><X className="w-5 h-5" /></button>
+              </div>
             </div>
+
+            {showAddHistorical && (
+              <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 border-b border-indigo-100 dark:border-indigo-800 flex-shrink-0">
+                <p className="text-xs text-indigo-700 dark:text-indigo-300 mb-3 font-medium">Add a historical COGS snapshot for dates before this system was in use. This will appear on the COGS Over Time chart.</p>
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Date</label>
+                    <input 
+                      type="date" 
+                      value={histDate} 
+                      onChange={e => setHistDate(e.target.value)} 
+                      className="p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm w-40"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Reference Note</label>
+                    <input 
+                      type="text" 
+                      value={histNote} 
+                      onChange={e => setHistNote(e.target.value)} 
+                      placeholder="e.g. Pre-System Import" 
+                      className="p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm w-48"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Avg COGS at that time</label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        value={histCogs} 
+                        onChange={e => setHistCogs(e.target.value)} 
+                        placeholder="0.00" 
+                        className="p-2 pl-6 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm w-32 text-right"
+                      />
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleAddHistorical} 
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm font-medium transition-colors"
+                  >
+                    Save
+                  </button>
+                  <button 
+                    onClick={() => setShowAddHistorical(false)} 
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 text-sm transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="p-0 overflow-y-auto flex-1">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-100 dark:bg-gray-700">

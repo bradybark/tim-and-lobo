@@ -9,6 +9,8 @@ const formatMoney = (amount) => {
 const CustomerSalesReportModal = ({ customer, onClose }) => {
   const { outgoingOrders = [], internalOrders = [], skuDescriptions = {} } = useInventory();
   const [timePeriod, setTimePeriod] = useState('All Time');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
   const [excludeInitial, setExcludeInitial] = useState(true);
 
   const reportData = useMemo(() => {
@@ -49,6 +51,7 @@ const CustomerSalesReportModal = ({ customer, onClose }) => {
     // Filter by the selected time period to determine what falls into the "Visible" bucket
     const now = new Date();
     let cutoffDate = null;
+    let endCutoffDate = null;
     if (timePeriod === 'Last 30 Days') {
       cutoffDate = new Date(now);
       cutoffDate.setDate(now.getDate() - 30);
@@ -57,6 +60,14 @@ const CustomerSalesReportModal = ({ customer, onClose }) => {
       cutoffDate.setDate(now.getDate() - 90);
     } else if (timePeriod === 'YTD') {
       cutoffDate = new Date(now.getFullYear(), 0, 1);
+    } else if (timePeriod === 'Custom Range') {
+      if (customStartDate) {
+        // Create date assuming local timezone to match input type="date"
+        cutoffDate = new Date(customStartDate + 'T00:00:00');
+      }
+      if (customEndDate) {
+        endCutoffDate = new Date(customEndDate + 'T23:59:59');
+      }
     }
 
     // Group items by SKU
@@ -101,7 +112,10 @@ const CustomerSalesReportModal = ({ customer, onClose }) => {
       record.cost += item.cost;
 
       // Also track the metrics that fall within the selected date range
-      if (!cutoffDate || item.date >= cutoffDate) {
+      const isAfterStart = !cutoffDate || item.date >= cutoffDate;
+      const isBeforeEnd = !endCutoffDate || item.date <= endCutoffDate;
+      
+      if (isAfterStart && isBeforeEnd) {
         record.filteredTotalQty += item.count;
         record.filteredRevenue += item.revenue;
         record.filteredCost += item.cost;
@@ -150,7 +164,7 @@ const CustomerSalesReportModal = ({ customer, onClose }) => {
         };
       })
       .sort((a, b) => b.filteredTotalQty - a.filteredTotalQty);
-  }, [customer, outgoingOrders, internalOrders, timePeriod, excludeInitial, skuDescriptions]);
+  }, [customer, outgoingOrders, internalOrders, timePeriod, excludeInitial, skuDescriptions, customStartDate, customEndDate]);
 
   const totals = reportData.reduce((acc, row) => {
     acc.qty += row.filteredTotalQty;
@@ -190,9 +204,33 @@ const CustomerSalesReportModal = ({ customer, onClose }) => {
               <option value="Last 90 Days">Last 90 Days</option>
               <option value="YTD">Year to Date (YTD)</option>
               <option value="All Time">All Time</option>
+              <option value="Custom Range">Custom Date Range</option>
             </select>
           </div>
           
+          {timePeriod === 'Custom Range' && (
+            <div className="flex items-center gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
+                <input 
+                  type="date" 
+                  value={customStartDate} 
+                  onChange={e => setCustomStartDate(e.target.value)} 
+                  className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
+                <input 
+                  type="date" 
+                  value={customEndDate} 
+                  onChange={e => setCustomEndDate(e.target.value)} 
+                  className="p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-2 mt-4">
             <input 
               type="checkbox" 

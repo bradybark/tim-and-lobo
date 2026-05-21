@@ -517,6 +517,58 @@ const OutgoingOrdersView = (props) => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [search, setSearch] = useState('');
   const [reportCustomer, setReportCustomer] = useState(null);
+  const [activeTab, setActiveTab] = useState('list');
+  const [recentlyPaidIds, setRecentlyPaidIds] = useState(new Set());
+
+  // Clear recently paid items if they switch away and come back
+  React.useEffect(() => {
+    if (activeTab === 'outstanding') {
+      setRecentlyPaidIds(new Set());
+    }
+  }, [activeTab]);
+
+  // Outstanding Invoice Aggregation
+  const outstandingData = useMemo(() => {
+    const unpaidOrders = (outgoingOrders || []).filter(o => !o.isPaid || recentlyPaidIds.has(o.id));
+    let grandTotal = 0;
+    const customerMap = {};
+
+    unpaidOrders.forEach(order => {
+      const custId = order.customerId;
+      const amount = (order.items || []).reduce((sum, item) => sum + ((item.count || 0) * (item.price || 0)), 0);
+      
+      if (!customerMap[custId]) {
+        const c = (customers || []).find(c => c.id === custId);
+        customerMap[custId] = {
+          customerId: custId,
+          customerName: c ? c.company : 'Unknown',
+          totalOwed: 0,
+          orders: []
+        };
+      }
+      
+      if (!order.isPaid) {
+        customerMap[custId].totalOwed += amount;
+        grandTotal += amount;
+      }
+
+      customerMap[custId].orders.push({
+        id: order.id,
+        date: order.date,
+        poNumber: order.poNumber,
+        invoiceNumber: order.invoiceNumber,
+        amount,
+        isPaid: order.isPaid,
+        fullOrder: order
+      });
+    });
+
+    return {
+      grandTotal,
+      unpaidCount: unpaidOrders.filter(o => !o.isPaid).length,
+      customers: Object.values(customerMap).sort((a, b) => b.totalOwed - a.totalOwed)
+    };
+  }, [outgoingOrders, customers, recentlyPaidIds]);
 
   // Setup table sorting/filtering with safety checks
   const filteredData = useMemo(() => {
@@ -562,6 +614,32 @@ const OutgoingOrdersView = (props) => {
     setIsModalOpen(true);
   };
 
+  const handleMarkPaid = (e, order) => {
+    e.stopPropagation(); // Prevent opening the edit modal
+    if (saveOutgoingOrder) {
+      setRecentlyPaidIds(prev => {
+        const next = new Set(prev);
+        next.add(order.id);
+        return next;
+      });
+      saveOutgoingOrder({ ...order, isPaid: true });
+      toast.success('Invoice marked as paid!');
+    }
+  };
+
+  const handleUndoPaid = (e, order) => {
+    e.stopPropagation();
+    if (saveOutgoingOrder) {
+      setRecentlyPaidIds(prev => {
+        const next = new Set(prev);
+        next.delete(order.id);
+        return next;
+      });
+      saveOutgoingOrder({ ...order, isPaid: false });
+      toast.success('Invoice reverted to unpaid.');
+    }
+  };
+
   const handleAddNew = () => {
     setSelectedOrder(null);
     setIsModalOpen(true);
@@ -598,20 +676,37 @@ const OutgoingOrdersView = (props) => {
         </button>
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-        {/* Toolbar */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search PO or Customer..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+      {/* TABS */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6 gap-2">
+        <button 
+          onClick={() => setActiveTab('list')} 
+          className={`pb-2 px-4 font-medium transition-colors ${activeTab === 'list' ? 'border-b-2 border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        >
+          Order List
+        </button>
+        <button 
+          onClick={() => setActiveTab('outstanding')} 
+          className={`pb-2 px-4 font-medium transition-colors ${activeTab === 'outstanding' ? 'border-b-2 border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        >
+          Outstanding Invoices
+        </button>
+      </div>
+
+      {activeTab === 'list' && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex gap-4 items-center">
+            <input 
+              type="text" 
+              placeholder="Search PO or Customer..." 
+              value={search} 
+              onChange={e => setSearch(e.target.value)}
+              className="p-2 pl-4 border rounded shadow-sm w-64 dark:bg-gray-700 dark:border-gray-600 dark:text-white text-sm"
             />
+            <div className="flex gap-2 ml-auto">
+              {/* <button className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-white rounded shadow-sm transition">Export CSV</button> */}
+              <button onClick={handleAddNew} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm transition text-sm">+ Create Order</button>
+            </div>
           </div>
-        </div>
 
         {/* Table */}
         <div className="overflow-x-auto">
@@ -714,7 +809,90 @@ const OutgoingOrdersView = (props) => {
             </tbody>
           </table>
         </div>
-      </div>
+        </div>
+      )}
+
+      {activeTab === 'outstanding' && (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Grand Total Outstanding</h2>
+              <div className="text-4xl font-bold text-red-600 dark:text-red-400 mt-1">
+                ${outstandingData.grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Total Unpaid Invoices</div>
+              <div className="text-xl font-semibold dark:text-white">
+                {outstandingData.unpaidCount}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {outstandingData.customers.map(cust => (
+              <div key={cust.customerId} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-4 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
+                  <h3 className="font-bold text-lg dark:text-white truncate">{cust.customerName}</h3>
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400 mt-1">
+                    ${cust.totalOwed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="p-0 flex-1 overflow-y-auto max-h-[300px]">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Date/Ref</th>
+                        <th className="px-4 py-2 text-right font-medium text-gray-500 dark:text-gray-400">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                      {cust.orders.map(order => (
+                        <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                          <td className="px-4 py-3 cursor-pointer" onClick={() => handleEdit(order.fullOrder)}>
+                            <div className="font-medium dark:text-white hover:text-indigo-600 transition-colors">{order.date}</div>
+                            <div className="text-xs text-gray-500">
+                              PO: {order.poNumber || 'N/A'} <br/>
+                              INV: {order.invoiceNumber || 'N/A'}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className={`font-medium mb-2 ${order.isPaid ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-gray-300'}`}>
+                              ${order.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            {order.isPaid ? (
+                              <button 
+                                onClick={(e) => handleUndoPaid(e, order.fullOrder)}
+                                className="text-xs font-medium px-2 py-1 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 rounded transition-colors"
+                              >
+                                Undo
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={(e) => handleMarkPaid(e, order.fullOrder)}
+                                className="text-xs font-medium px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded transition-colors"
+                              >
+                                Mark Paid ✓
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+            {outstandingData.customers.length === 0 && (
+              <div className="col-span-full p-12 text-center bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 border-dashed">
+                <div className="text-green-500 text-4xl mb-4">🎉</div>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white">All Paid Up!</h3>
+                <p className="text-gray-500 mt-1">There are no outstanding invoices.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <OrderModal
