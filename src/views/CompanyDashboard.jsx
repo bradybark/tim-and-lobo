@@ -22,6 +22,7 @@ import InternalOrdersView from './InternalOrdersView';
 import WebsiteOrdersView from './WebsiteOrdersView';
 import ExpenseTrackingView from './ExpenseTrackingView';
 import QuotesView from './QuotesView';
+import InvoicesView from './InvoicesView';
 
 import { useInventory } from '../context/InventoryContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
@@ -447,6 +448,9 @@ const CompanyDashboard = ({
   const quotesTabs = [
     { id: 'quotes-list', label: 'Quotes', icon: FileTextIcon },
   ];
+  const invoicesTabs = [
+    { id: 'invoices-list', label: 'Invoices', icon: FileTextIcon },
+  ];
 
   // Build expenses tabs
   const expensesTabs = [
@@ -456,6 +460,7 @@ const CompanyDashboard = ({
   // Select current tabs based on parent tab
   const currentTabs = parentTab === 'outgoing' && hasOutgoingSection ? outgoingTabs
     : parentTab === 'quotes' && hasQuotesSection ? quotesTabs
+    : parentTab === 'invoices' ? invoicesTabs
     : parentTab === 'expenses' ? expensesTabs
       : inventoryTabs;
 
@@ -492,6 +497,7 @@ const CompanyDashboard = ({
               <button onClick={() => { setParentTab('quotes'); setActiveTab('quotes-list'); }} className={`flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'quotes' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}><FileTextIcon className="w-4 h-4" /> Quotes</button>
             )}
             <button onClick={() => { setParentTab('expenses'); setActiveTab('expenses-dashboard'); }} className={`flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'expenses' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}><DollarSign className="w-4 h-4" /> Expenses</button>
+            <button onClick={() => { setParentTab('invoices'); setActiveTab('invoices-list'); }} className={`flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'invoices' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}><FileTextIcon className="w-4 h-4" /> Invoices</button>
           </div>
         )}
 
@@ -555,9 +561,7 @@ const CompanyDashboard = ({
           {parentTab === 'expenses' && activeTab === 'expenses-dashboard' && <ExpenseTrackingView expenses={expenses} setExpenses={setExpenses} expenseCategories={expenseCategories} setExpenseCategories={setExpenseCategories} />}
 
           {parentTab === 'quotes' && activeTab === 'quotes-list' && hasQuotesSection && <QuotesView quotes={quotes} setQuotes={setQuotes} customers={customers} myCompany={myCompany} companyLogo={companyLogo} />}
-
-
-          {activeTab === 'settings' && (
+          {parentTab === 'invoices' && activeTab === 'invoices-list' && <InvoicesView invoices={invoices} setInvoices={setInvoices} customers={customers} myCompany={myCompany} companyLogo={companyLogo} />}          {activeTab === 'settings' && (
             <SettingsView
               onOpenVendors={() => { setParentTab('inventory'); setActiveTab('vendors'); }}
               onOpenCustomers={() => setActiveTab('customers')}
