@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { VendorCell } from '../components/VendorCell';
+import { getStoredDocumentFile, storeDocumentFile } from '../utils/documentStorage';
 
 // Helper to format currency
 const formatMoney = (amount) => {
@@ -36,8 +37,8 @@ const PurchaseOrderSystem = ({
     vendors,
     setVendors,
     skuImages,
-    poBackupHandle,
-    invoiceBackupHandle,
+    documentStorageRootHandle,
+    orgKey,
     myCompany,
     companyLogo,
     onOpenVendors
@@ -426,27 +427,42 @@ const PurchaseOrderSystem = ({
             documents: newPO.documents || []
         };
 
-        // 1. Update State
+        // Store the generated PO source under the shared root before saving its reference.
+        if (documentStorageRootHandle && !isUpdate) {
+            try {
+                const vendor = vendors.find(v => v.id == finalPO.vendorId);
+                const html = await generatePOHtml(finalPO, vendor);
+                const vendorName = typeof vendor?.name === 'object' ? vendor.name.name : vendor?.name;
+                const generatedFile = new File([html], `${finalPO.poNumber}.html`, { type: 'text/html' });
+                finalPO.generatedPOStorage = await storeDocumentFile({
+                    rootHandle: documentStorageRootHandle,
+                    orgKey,
+                    partyType: 'vendors',
+                    partyId: vendor?.id ?? finalPO.vendorId,
+                    partyName: vendorName || 'Unknown Vendor',
+                    businessDate: finalPO.orderDate,
+                    direction: 'outgoing',
+                    documentType: 'purchase-orders',
+                    recordId: finalPO.id,
+                    recordLabel: finalPO.poNumber,
+                    area: 'generated',
+                    file: generatedFile,
+                    metadata: {
+                        vendorId: finalPO.vendorId,
+                        purchaseOrderNumber: finalPO.poNumber,
+                    },
+                });
+            } catch (err) {
+                console.error("Backup failed", err);
+                toast.error(err?.message || "Failed to save generated PO to document-storage.");
+            }
+        }
+
+        // Update state after storage so the permanent path is retained with the PO.
         if (isUpdate) {
             updatePOs(pos.map(p => p.id === finalPO.id ? finalPO : p));
         } else {
             updatePOs([...pos, finalPO]);
-        }
-
-        // 2. Automated Backup (If Folder Set) - Only for new POs
-        if (poBackupHandle && !isUpdate) {
-            try {
-                const vendor = vendors.find(v => v.id == finalPO.vendorId);
-                const html = await generatePOHtml(finalPO, vendor);
-
-                const fileHandle = await poBackupHandle.getFileHandle(`${finalPO.poNumber}.html`, { create: true });
-                const writable = await fileHandle.createWritable();
-                await writable.write(html);
-                await writable.close();
-            } catch (err) {
-                console.error("Backup failed", err);
-                alert("Failed to save backup copy. Check permissions.");
-            }
         }
 
         setViewMode('list');
@@ -509,29 +525,6 @@ const PurchaseOrderSystem = ({
 
         const hasBackorders = items.some(item => item.receivedQty < item.orderedQty);
 
-        let newDoc = null;
-        if (file) {
-            try {
-                const base64Data = await blobToBase64(file);
-                newDoc = {
-                    id: Date.now(),
-                    name: file.name,
-                    type: 'invoice',
-                    data: base64Data,
-                    date: new Date().toISOString()
-                };
-            } catch (err) {
-                console.error("Error reading file", err);
-                toast.error("Failed to read file.");
-                return;
-            }
-        }
-
-        const termsDays = getTermDays(po.termType, po.termDays);
-        const iDate = new Date(invoiceDate);
-        iDate.setDate(iDate.getDate() + termsDays);
-        const dueDate = !isNaN(iDate.getTime()) ? iDate.toISOString().split('T')[0] : '';
-
         let finalPoNumber = po.poNumber;
         if (po.poNumber.endsWith('-BO')) {
             finalPoNumber = po.poNumber.replace('-BO', '-1');
@@ -541,6 +534,59 @@ const PurchaseOrderSystem = ({
                 finalPoNumber = po.poNumber.replace('-BO', `-${counter}`);
             }
         }
+
+        let newDoc = null;
+        if (file) {
+            if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                toast.error('Vendor invoices must be uploaded as PDF files.');
+                return;
+            }
+            if (!documentStorageRootHandle) {
+                toast.error('Connect the shared document-storage root in Settings before uploading an invoice.');
+                return;
+            }
+            try {
+                const base64Data = await blobToBase64(file);
+                const vendor = vendors.find(v => v.id == po.vendorId);
+                const vendorName = typeof vendor?.name === 'object' ? vendor.name.name : vendor?.name;
+                const storageReference = await storeDocumentFile({
+                    rootHandle: documentStorageRootHandle,
+                    orgKey,
+                    partyType: 'vendors',
+                    partyId: vendor?.id ?? po.vendorId,
+                    partyName: vendorName || 'Unknown Vendor',
+                    businessDate: invoiceDate,
+                    direction: 'incoming',
+                    documentType: 'invoices',
+                    recordId: po.id,
+                    recordLabel: `invoice-${finalPoNumber}`,
+                    area: 'originals',
+                    file,
+                    metadata: {
+                        vendorId: po.vendorId,
+                        purchaseOrderNumber: finalPoNumber,
+                        invoiceDate,
+                    },
+                });
+                newDoc = {
+                    id: Date.now(),
+                    name: file.name,
+                    type: 'invoice',
+                    data: base64Data,
+                    date: new Date().toISOString(),
+                    storage: storageReference,
+                };
+            } catch (err) {
+                console.error("Error reading file", err);
+                toast.error(err?.message || "Failed to store invoice.");
+                return;
+            }
+        }
+
+        const termsDays = getTermDays(po.termType, po.termDays);
+        const iDate = new Date(invoiceDate);
+        iDate.setDate(iDate.getDate() + termsDays);
+        const dueDate = !isNaN(iDate.getTime()) ? iDate.toISOString().split('T')[0] : '';
 
         const updatedOriginalItems = items
             .filter(item => item.receivedQty > 0)
@@ -596,30 +642,32 @@ const PurchaseOrderSystem = ({
 
         updatePOs(newPOsList);
         
-        if (invoiceBackupHandle && file) {
-            try {
-                const fileName = `${finalPoNumber}_INV_${file.name}`;
-                const fileHandle = await invoiceBackupHandle.getFileHandle(fileName, { create: true });
-                const writable = await fileHandle.createWritable();
-                await writable.write(file);
-                await writable.close();
-            } catch (err) {
-                console.error("Invoice backup failed", err);
-                toast.error("Failed to save invoice to backup folder.");
-            }
-        }
-
         setReceivingPO(null);
         toast.success(hasBackorders ? "Invoice matched & Backorder PO created" : "Invoice matched & PO Received");
     };
 
-    const downloadDocument = (doc) => {
+    const downloadDocument = async (doc) => {
         const link = document.createElement('a');
-        link.href = doc.data;
+        let objectUrl = null;
+        if (doc.storage && documentStorageRootHandle) {
+            try {
+                const storedFile = await getStoredDocumentFile(documentStorageRootHandle, doc.storage);
+                objectUrl = URL.createObjectURL(storedFile);
+                link.href = objectUrl;
+            } catch (error) {
+                console.error('Could not open stored invoice; using browser copy', error);
+            }
+        }
+        if (!link.href && doc.data) link.href = doc.data;
+        if (!link.href) {
+            toast.error('Document file is missing. Reconnect document-storage in Settings.');
+            return;
+        }
         link.download = doc.name;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
 
     const downloadPO = async (po) => {
@@ -1300,7 +1348,7 @@ const PurchaseOrderSystem = ({
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Upload Invoice</label>
                                 <input
                                     type="file"
-                                    accept=".pdf,.png,.jpg,.jpeg"
+                                    accept="application/pdf,.pdf"
                                     className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:file:bg-gray-700 dark:file:text-gray-300"
                                     onChange={(e) => setReceivingPO({ ...receivingPO, file: e.target.files?.[0] || null })}
                                 />

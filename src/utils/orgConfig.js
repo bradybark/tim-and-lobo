@@ -3,9 +3,9 @@
 // Default fallback with specific colors and feature configurations
 const DEFAULT_ORGS = [
   {
-    id: 'company-a',
-    name: 'Company A',
-    description: 'Full inventory management with all features.',
+    id: 'lobo',
+    name: 'Lobo Tool Company',
+    description: 'Full inventory, purchasing, and customer order management.',
     themeColor: '#3b82f6', // Blue
     features: [
       'inventoryLog',
@@ -19,9 +19,9 @@ const DEFAULT_ORGS = [
     poComponent: 'POView'
   },
   {
-    id: 'company-b',
-    name: 'Company B',
-    description: 'Simplified PO tracking only.',
+    id: 'timothy',
+    name: "Timothy's Toolbox",
+    description: 'Vendor purchase order and quote management.',
     themeColor: '#10b981', // Emerald (Green)
     features: ['purchaseOrders', 'quotes'],
     poComponent: 'PurchaseOrderSystem'

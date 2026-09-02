@@ -10,6 +10,7 @@ export function ImageUploader({
   className = '',
   placeholder,
   objectFit = 'cover',
+  preserveOriginal = false,
 }) {
   const fileInputRef = useRef(null)
 
@@ -23,6 +24,12 @@ export function ImageUploader({
     if (!file) return;
 
     if (!file.type.startsWith('image/')) return;
+
+    if (preserveOriginal) {
+      onUpload(imageKey, file);
+      e.target.value = '';
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {

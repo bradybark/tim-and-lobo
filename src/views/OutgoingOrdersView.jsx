@@ -7,6 +7,16 @@ import { FileUploader } from '../components/FileUploader';
 import { toast } from 'sonner';
 import { useInventory } from '../context/InventoryContext';
 import CustomerSalesReportModal from '../components/CustomerSalesReportModal';
+import { getStoredDocumentFile, storeDocumentFile } from '../utils/documentStorage';
+import { findInvoiceNumberConflict, getNextInvoiceNumber } from '../utils/invoiceNumbers';
+import {
+  createBackorderOrder,
+  getBackorderedQuantity,
+  getBackorderInvoiceNumber,
+  getInvoiceQuantity,
+  getOrderedQuantity,
+  hasBackorderedItems,
+} from '../utils/backorders';
 
 
 
@@ -25,6 +35,9 @@ const formatDate = (dateLike) => {
     year: 'numeric',
   });
 };
+
+const EMPTY_ARRAY = [];
+const EMPTY_OBJECT = {};
 
 const blobToDataURL = (blob) => {
   return new Promise((resolve) => {
@@ -57,7 +70,7 @@ const dataURLtoBlob = (dataurl) => {
 };
 
 // --- ORDER MODAL COMPONENT ---
-const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyLogo: propLogo, outgoingOrders }) => {
+const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, onPersist, companyLogo: propLogo, outgoingOrders, documentStorageRootHandle, orgKey }) => {
   const { myCompany, companyLogo: contextLogo, skuDescriptions } = useInventory();
   const companyLogo = propLogo || contextLogo;
   const [formData, setFormData] = useState(() => ({
@@ -77,12 +90,94 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
     shippingCompany: order?.shippingCompany || '',
     isPaid: order?.isPaid || false,
     filePO: order?.filePO || null,
-    fileInvoice: order?.fileInvoice || null
+    fileInvoice: order?.fileInvoice || null,
+    filePOStorage: order?.filePOStorage || null,
+    fileInvoiceStorage: order?.fileInvoiceStorage || null,
+    parentOrderId: order?.parentOrderId || null,
+    rootOrderId: order?.rootOrderId || null,
+    isBackorder: order?.isBackorder || false,
+    backorderSequence: order?.backorderSequence || null,
+    backorderStatus: order?.backorderStatus || null,
   }));
+
+  const storeUploadedDocument = async (file, kind) => {
+    if (!documentStorageRootHandle) {
+      toast.error('Connect the shared document-storage root in Settings first.');
+      return;
+    }
+    const customer = customers.find(c => Number(c.id) === Number(formData.customerId));
+    if (!customer) {
+      toast.error('Select the customer before uploading a document.');
+      return;
+    }
+    if (!formData.date) {
+      toast.error('Enter the PO or invoice business date before uploading.');
+      return;
+    }
+    if (kind === 'invoice' && file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      toast.error('Final invoices must be uploaded as PDF files.');
+      return;
+    }
+
+    const recordLabel = kind === 'invoice' ? formData.invoiceNumber : formData.poNumber;
+    if (!recordLabel) {
+      toast.error(kind === 'invoice'
+        ? 'Generate the invoice number before uploading its PDF.'
+        : 'Enter the customer PO number before uploading the PO.');
+      return;
+    }
+
+    try {
+      const storageReference = await storeDocumentFile({
+        rootHandle: documentStorageRootHandle,
+        orgKey,
+        partyType: 'customers',
+        partyId: customer.id,
+        partyName: customer.company,
+        businessDate: formData.date,
+        direction: kind === 'invoice' ? 'outgoing' : 'incoming',
+        documentType: kind === 'invoice' ? 'invoices' : 'purchase-orders',
+        recordId: formData.id,
+        recordLabel,
+        area: kind === 'invoice' ? 'final' : 'originals',
+        file,
+        metadata: {
+          customerId: customer.id,
+          customerName: customer.company,
+          purchaseOrderNumber: formData.poNumber || null,
+          invoiceNumber: formData.invoiceNumber || null,
+        },
+      });
+      const browserCopy = await blobToDataURL(file);
+      setFormData(prev => ({
+        ...prev,
+        [kind === 'invoice' ? 'fileInvoice' : 'filePO']: browserCopy,
+        [kind === 'invoice' ? 'fileInvoiceStorage' : 'filePOStorage']: storageReference,
+      }));
+      toast.success(`Saved to document-storage/${storageReference.relativePath}`);
+    } catch (error) {
+      console.error('Document storage failed', error);
+      toast.error(error?.message || 'Could not save the document.');
+    }
+  };
 
   const handleItemChange = (idx, field, val) => {
     const newItems = [...formData.items];
     newItems[idx] = { ...newItems[idx], [field]: val };
+
+    if (field === 'count') {
+      newItems[idx].count = Math.max(1, Number(val) || 1);
+      newItems[idx].backorderedQty = Math.min(
+        getBackorderedQuantity(newItems[idx]),
+        newItems[idx].count,
+      );
+    }
+    if (field === 'backorderedQty') {
+      newItems[idx].backorderedQty = Math.min(
+        getOrderedQuantity(newItems[idx]),
+        Math.max(0, Number(val) || 0),
+      );
+    }
 
     if (field === 'sku') {
       newItems[idx].unitCost = cogs[val] || 0;
@@ -98,7 +193,7 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
   const addItem = () => {
     setFormData(prev => ({
       ...prev,
-      items: [...prev.items, { sku: allSkus[0] || 'Unknown', count: 1, price: 0, unitCost: cogs[allSkus[0]] || 0 }]
+      items: [...prev.items, { sku: allSkus[0] || 'Unknown', count: 1, backorderedQty: 0, price: 0, unitCost: cogs[allSkus[0]] || 0 }]
     }));
   };
 
@@ -106,12 +201,19 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
     setFormData(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
   };
 
-  const subTotal = formData.items.reduce((sum, item) => sum + (item.count * item.price), 0);
-  const totalCogs = formData.items.reduce((sum, item) => sum + (item.count * item.unitCost), 0);
+  const subTotal = formData.items.reduce((sum, item) => sum + (getInvoiceQuantity(item) * item.price), 0);
+  const totalCogs = formData.items.reduce((sum, item) => sum + (getInvoiceQuantity(item) * item.unitCost), 0);
   const totalRevenue = subTotal + Number(formData.adjustment);
   const totalCost = totalCogs + Number(formData.processingFee) + Number(formData.shippingCost);
   const profit = totalRevenue - totalCost;
   const margin = totalRevenue > 0 ? (profit / totalRevenue) * 100 : 0;
+
+  const routingStillMatches = (storageReference, recordLabel) => {
+    if (!storageReference?.routing) return true;
+    return String(storageReference.routing.partyId) === String(formData.customerId)
+      && storageReference.routing.businessDate === formData.date
+      && String(storageReference.routing.recordLabel) === String(recordLabel);
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -119,10 +221,15 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
       toast.error("Please select a customer");
       return;
     }
+    if (!routingStillMatches(formData.filePOStorage, formData.poNumber)
+      || !routingStillMatches(formData.fileInvoiceStorage, formData.invoiceNumber)) {
+      toast.error('Customer, business date, or document number changed. Re-upload the document so it is stored in the correct folder.');
+      return;
+    }
     onSave(formData);
   };
 
-  const generateDocumentHtml = async (type) => { // type = 'invoice' | 'confirmation'
+  const generateDocumentHtml = async (type, invoiceNumber = formData.invoiceNumber) => { // type = 'invoice' | 'confirmation'
     if (!formData.customerId) {
       toast.error("Please select a customer first.");
       return null;
@@ -137,38 +244,7 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
     const docTitle = type === 'invoice' ? 'INVOICE' : 'ORDER CONFIRMATION';
     const docNumberLabel = type === 'invoice' ? 'INVOICE #' : 'PO / REF #';
 
-    let generatedInvoiceNumber = formData.invoiceNumber;
-    if (type === 'invoice' && !generatedInvoiceNumber) {
-      const customerOrders = (outgoingOrders || []).filter(o => o.customerId === customer.id && o.invoiceNumber !== undefined && o.invoiceNumber !== '');
-      let maxSeq = 0;
-      const suffixStr = customer.invoiceSuffix || '';
-
-      customerOrders.forEach(o => {
-        let seqStr = '';
-        // If the invoice starts with the exact suffix provided by the customer
-        if (suffixStr && o.invoiceNumber.startsWith(suffixStr)) {
-          seqStr = o.invoiceNumber.substring(suffixStr.length);
-        }
-        // If there's no suffix on the customer, but the invoice number is purely numeric
-        else if (!suffixStr && /^\\d+$/.test(o.invoiceNumber)) {
-          seqStr = o.invoiceNumber;
-        }
-        // If it doesn't match the current suffix, it's ignored for sequence calculation
-
-        if (seqStr) {
-          const seq = parseInt(seqStr, 10);
-          if (!isNaN(seq) && seq > maxSeq) {
-            maxSeq = seq;
-          }
-        }
-      });
-
-      generatedInvoiceNumber = `${suffixStr}${String(maxSeq + 1).padStart(3, '0')}`;
-      // Update form data so that if the user pushes Save Order, it saves the assigned invoice number
-      setFormData(prev => ({ ...prev, invoiceNumber: generatedInvoiceNumber }));
-    }
-
-    const docNumber = type === 'invoice' ? generatedInvoiceNumber : formData.poNumber;
+    const docNumber = type === 'invoice' ? invoiceNumber : formData.poNumber;
     const poNumberHtml = type === 'invoice' ? `<div class="meta-row"><span class="meta-label">PO #:</span> <span>${formData.poNumber || ''}</span></div>` : '';
 
     // Logic: Due Date Calculation (Simple Net X logic)
@@ -184,16 +260,30 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
     dateObj.setDate(dateObj.getDate() + daysToAdd);
     const dueDateStr = formatDate(dateObj.toISOString());
 
-    // Items
+    const quantityForDocument = item => type === 'invoice'
+      ? getInvoiceQuantity(item)
+      : getOrderedQuantity(item);
+    const documentSubtotal = formData.items.reduce(
+      (sum, item) => sum + (quantityForDocument(item) * Number(item.price || 0)),
+      0,
+    );
+    const documentTotal = documentSubtotal + Number(formData.adjustment || 0);
+
+    // Show the complete PO quantity and the current fulfillment split on both documents.
     const itemsRows = formData.items.map(item => {
       const desc = skuDescriptions?.[item.sku] || '';
+      const orderedQuantity = getOrderedQuantity(item);
+      const shippedQuantity = getInvoiceQuantity(item);
+      const backorderedQuantity = getBackorderedQuantity(item);
       return `
         <tr style="border-bottom: 1px solid #eee;">
             <td style="padding: 10px;">${item.sku}</td>
             <td style="padding: 10px;">${desc}</td>
-            <td style="padding: 10px; text-align: right;">${item.count}</td>
+            <td style="padding: 10px; text-align: right;">${orderedQuantity}</td>
+            <td style="padding: 10px; text-align: right;">${shippedQuantity}</td>
+            <td style="padding: 10px; text-align: right; color: ${backorderedQuantity > 0 ? '#b45309' : '#666'}; font-weight: ${backorderedQuantity > 0 ? 'bold' : 'normal'};">${backorderedQuantity}</td>
             <td style="padding: 10px; text-align: right;">${formatMoney(item.price)}</td>
-            <td style="padding: 10px; text-align: right;">${formatMoney(item.count * item.price)}</td>
+            <td style="padding: 10px; text-align: right;">${formatMoney(quantityForDocument(item) * item.price)}</td>
         </tr>
       `;
     }).join('');
@@ -287,7 +377,7 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
             </div>
 
             <table>
-                <thead><tr><th>SKU</th><th>Description</th><th style="text-align: right;">Qty</th><th style="text-align: right;">Unit Price</th><th style="text-align: right;">Amount</th></tr></thead>
+                <thead><tr><th>SKU</th><th>Description</th><th style="text-align: right;">Ordered</th><th style="text-align: right;">Ship Now</th><th style="text-align: right;">Backordered</th><th style="text-align: right;">Unit Price</th><th style="text-align: right;">Amount</th></tr></thead>
                 <tbody>${itemsRows}</tbody>
             </table>
 
@@ -301,12 +391,12 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
                     ` : ''}
                 </div>
                 <div class="totals-box">
-                    <div class="total-row"><span>Subtotal</span><span>${formatMoney(subTotal)}</span></div>
+                    <div class="total-row"><span>Subtotal</span><span>${formatMoney(documentSubtotal)}</span></div>
                     ${Number(formData.adjustment) !== 0 ? `<div class="total-row"><span>Adjustment ${formData.adjustmentNote ? `(${formData.adjustmentNote})` : ''}</span><span>${formatMoney(formData.adjustment)}</span></div>` : ''}
                     ${Number(formData.processingFee) !== 0 ? `<div class="total-row"><span>Processing Fee</span><span>${formatMoney(formData.processingFee)}</span></div>` : ''}
                     <div class="total-row final">
                         <span>Total Due</span>
-                        <span>${formatMoney(totalRevenue)}</span>
+                        <span>${formatMoney(documentTotal)}</span>
                     </div>
                 </div>
             </div>
@@ -320,20 +410,70 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
   };
 
   const downloadDocument = async (type) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error("Popup blocked. Please allow popups to print invoices.");
+      return;
+    }
+
     try {
       console.log("Starting invoice generation...");
-      const html = await generateDocumentHtml(type);
+      let invoiceNumber = String(formData.invoiceNumber || '').trim();
+      if (type === 'invoice') {
+        const customer = customers.find(c => String(c.id) === String(formData.customerId));
+        if (!customer) {
+          printWindow.close();
+          toast.error('Please select a customer first.');
+          return;
+        }
+        if (!formData.poNumber || !formData.date) {
+          printWindow.close();
+          toast.error('Enter the customer PO number and business date before generating an invoice.');
+          return;
+        }
+        if (!formData.items.some(item => getInvoiceQuantity(item) > 0)) {
+          printWindow.close();
+          toast.error('At least one SKU must have a Ship Now quantity before generating an invoice.');
+          return;
+        }
+        if (!invoiceNumber) {
+          invoiceNumber = formData.isBackorder
+            ? getBackorderInvoiceNumber({ order: formData, orders: outgoingOrders })
+            : getNextInvoiceNumber({ orders: outgoingOrders, customer });
+        }
+        const conflict = findInvoiceNumberConflict({
+          orders: outgoingOrders,
+          invoiceNumber,
+          orderId: formData.id,
+        });
+        if (conflict) {
+          printWindow.close();
+          toast.error(`Invoice number ${invoiceNumber} is already assigned to PO ${conflict.poNumber || 'another order'}.`);
+          return;
+        }
+        if (!routingStillMatches(formData.filePOStorage, formData.poNumber)
+          || !routingStillMatches(formData.fileInvoiceStorage, invoiceNumber)) {
+          printWindow.close();
+          toast.error('Customer, business date, or document number changed. Re-upload the affected document before generating the invoice.');
+          return;
+        }
+        const orderWithInvoiceNumber = {
+          ...formData,
+          invoiceNumber,
+          backorderStatus: formData.isBackorder ? 'invoiced' : formData.backorderStatus,
+        };
+        await onPersist(orderWithInvoiceNumber);
+        setFormData(orderWithInvoiceNumber);
+        toast.success(`Invoice number ${invoiceNumber} saved to the order.`);
+      }
+
+      const html = await generateDocumentHtml(type, invoiceNumber);
       if (!html) {
         console.error("No HTML generated");
+        printWindow.close();
         return;
       }
       console.log("HTML Generated, length:", html.length);
-
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        toast.error("Popup blocked. Please allow popups to print invoices.");
-        return;
-      }
       printWindow.document.write(html);
       printWindow.document.close();
 
@@ -352,10 +492,12 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
           };
         }
       } else {
+        setTimeout(() => printWindow.print(), 500);
       }
     } catch (err) {
+      printWindow.close();
       console.error("Error generating invoice:", err);
-      toast.error("Failed to generate invoice. Check console for details.");
+      toast.error(err?.message || "Failed to generate invoice. Check console for details.");
     }
   };
 
@@ -366,15 +508,35 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
           {/* Header */}
           <div className="flex justify-between items-start">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-              {order ? 'Edit Order' : 'New Outgoing Order'}
+              {formData.isBackorder
+                ? `Backorder Fulfillment #${formData.backorderSequence}`
+                : order ? 'Edit Order' : 'New Outgoing Order'}
             </h2>
             <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
           </div>
+
+          {formData.isBackorder && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+              Enter how many units are still backordered. The difference appears under Ship Now. Add tracking, then generate the invoice; any remainder becomes the next linked backorder.
+            </div>
+          )}
 
           {/* Basic Info */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg">
             <div><label className="block text-xs font-medium text-gray-500 mb-1">Date</label><input type="date" required value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
             <div><label className="block text-xs font-medium text-gray-500 mb-1">PO Number</label><input type="text" required value={formData.poNumber} onChange={e => setFormData({ ...formData, poNumber: e.target.value })} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Number</label>
+              <input
+                type="text"
+                aria-label="Invoice Number"
+                value={formData.invoiceNumber}
+                onChange={e => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                placeholder={formData.isBackorder ? 'Defaults to original invoice + sequence' : 'Leave blank to generate automatically'}
+                className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              />
+              <p className="mt-1 text-[11px] text-gray-500">A value entered here is saved and used when you generate the invoice.</p>
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Payment Terms</label>
               <select value={formData.paymentTerms} onChange={e => setFormData({ ...formData, paymentTerms: e.target.value })} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
@@ -407,18 +569,24 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
             <div className="flex justify-between items-center mb-2"><h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Order Items</h3><button type="button" onClick={addItem} className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-100">+ Add SKU</button></div>
             <table className="w-full text-sm border-collapse">
               <thead className="bg-gray-100 dark:bg-gray-700 text-xs uppercase text-gray-500">
-                <tr><th className="p-2 text-left">SKU</th><th className="p-2 text-right">Qty</th><th className="p-2 text-right">Price/Unit</th><th className="p-2 text-right">Total</th><th className="p-2 text-right">Unit Cost</th><th className="p-2 text-right">Gross Profit</th><th className="p-2 w-8"></th></tr>
+                <tr><th className="p-2 text-left">SKU</th><th className="p-2 text-right">Ordered</th><th className="p-2 text-right">Ship Now</th><th className="p-2 text-right">Backordered</th><th className="p-2 text-center">All BO</th><th className="p-2 text-right">Price/Unit</th><th className="p-2 text-right">Total</th><th className="p-2 text-right">Unit Cost</th><th className="p-2 text-right">Gross Profit</th><th className="p-2 w-8"></th></tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-600">
                 {formData.items.map((item, idx) => {
-                  const lineTotal = item.count * item.price;
-                  const lineCost = item.count * item.unitCost;
+                  const orderedQuantity = getOrderedQuantity(item);
+                  const backorderedQuantity = getBackorderedQuantity(item);
+                  const shipNowQuantity = getInvoiceQuantity(item);
+                  const lineTotal = shipNowQuantity * item.price;
+                  const lineCost = shipNowQuantity * item.unitCost;
                   const lineProfit = lineTotal - lineCost;
                   const lineMargin = lineTotal > 0 ? (lineProfit / lineTotal) * 100 : 0;
                   return (
                     <tr key={idx}>
                       <td className="p-2"><select value={item.sku} onChange={e => handleItemChange(idx, 'sku', e.target.value)} className="w-full bg-transparent border-b border-transparent focus:border-indigo-500 outline-none dark:bg-gray-700 dark:text-white rounded">{allSkus.map(s => <option key={s} value={s}>{s}</option>)}</select></td>
                       <td className="p-2 text-right"><input type="number" min="1" value={item.count} onChange={e => handleItemChange(idx, 'count', Number(e.target.value))} className="w-16 text-right bg-transparent border border-gray-200 dark:border-gray-600 rounded px-1 dark:text-white" /></td>
+                      <td className="p-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">{shipNowQuantity}</td>
+                      <td className="p-2 text-right"><input aria-label={`Backordered quantity for ${item.sku}`} type="number" min="0" max={orderedQuantity} value={backorderedQuantity} onChange={e => handleItemChange(idx, 'backorderedQty', Number(e.target.value))} className="w-16 text-right bg-transparent border border-amber-300 dark:border-amber-700 rounded px-1 text-amber-700 dark:text-amber-300" /></td>
+                      <td className="p-2 text-center"><input aria-label={`Backorder all ${item.sku}`} type="checkbox" checked={orderedQuantity > 0 && backorderedQuantity === orderedQuantity} onChange={e => handleItemChange(idx, 'backorderedQty', e.target.checked ? orderedQuantity : 0)} className="h-4 w-4 rounded text-amber-600" /></td>
                       <td className="p-2 text-right"><input type="number" step="0.01" value={item.price} onChange={e => handleItemChange(idx, 'price', Number(e.target.value))} className="w-20 text-right bg-transparent border border-gray-200 dark:border-gray-600 rounded px-1 dark:text-white" /></td>
                       <td className="p-2 text-right font-medium dark:text-white">${lineTotal.toLocaleString()}</td>
                       <td className="p-2 text-right"><input type="number" step="0.01" value={item.unitCost} onChange={e => handleItemChange(idx, 'unitCost', Number(e.target.value))} className="w-20 text-right bg-transparent border border-gray-200 dark:border-gray-600 rounded px-1 text-gray-600 dark:text-gray-300" /></td>
@@ -437,14 +605,8 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, companyL
               <div><label className="block text-xs font-medium text-gray-500">Tracking Number</label><input type="text" value={formData.tracking} onChange={e => setFormData({ ...formData, tracking: e.target.value })} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
               <div><label className="block text-xs font-medium text-gray-500">Shipping Company</label><input type="text" placeholder="e.g. UPS, FedEx, USPS" value={formData.shippingCompany} onChange={e => setFormData({ ...formData, shippingCompany: e.target.value })} className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" /></div>
               <div className="flex gap-4">
-                <FileUploader label="Upload PO" currentFile={formData.filePO} onUpload={async (f) => {
-                  const b64 = await blobToDataURL(f);
-                  setFormData(prev => ({ ...prev, filePO: b64 }));
-                }} />
-                <FileUploader label="Upload Invoice" currentFile={formData.fileInvoice} onUpload={async (f) => {
-                  const b64 = await blobToDataURL(f);
-                  setFormData(prev => ({ ...prev, fileInvoice: b64 }));
-                }} />
+                <FileUploader label="Upload PO" currentFile={formData.filePO} onUpload={(file) => storeUploadedDocument(file, 'po')} />
+                <FileUploader label="Upload Invoice PDF" accept="application/pdf,.pdf" currentFile={formData.fileInvoice} onUpload={(file) => storeUploadedDocument(file, 'invoice')} />
               </div>
               <div className="flex items-center gap-2 pt-2"><input type="checkbox" id="isPaid" checked={formData.isPaid} onChange={e => setFormData({ ...formData, isPaid: e.target.checked })} className="w-4 h-4 text-green-600 rounded" /><label htmlFor="isPaid" className="text-sm font-medium text-gray-700 dark:text-gray-300">Order Paid</label></div>
             </div>
@@ -503,13 +665,15 @@ const OutgoingOrdersView = (props) => {
   // Fix: Prefer props if passed, otherwise fall back to context
   const context = useInventory();
 
-  const outgoingOrders = props.outgoingOrders || context.outgoingOrders || [];
-  const customers = props.customers || context.customers || [];
-  const settings = props.settings || context.settings || [];
-  const cogs = props.cogs || context.cogs || {};
+  const outgoingOrders = props.outgoingOrders ?? context.outgoingOrders ?? EMPTY_ARRAY;
+  const customers = props.customers ?? context.customers ?? EMPTY_ARRAY;
+  const settings = props.settings ?? context.settings ?? EMPTY_ARRAY;
+  const cogs = props.cogs ?? context.cogs ?? EMPTY_OBJECT;
   const saveOutgoingOrder = context.saveOutgoingOrder;
   const deleteOutgoingOrder = context.deleteOutgoingOrder;
   const companyLogo = props.companyLogo || context.companyLogo;
+  const documentStorageRootHandle = props.documentStorageRootHandle || context.documentStorageRootHandle;
+  const orgKey = props.orgKey || context.orgKey;
 
   const allSkus = (settings || []).map(s => s.sku); // FIX: Derive SKUs from settings
 
@@ -529,13 +693,16 @@ const OutgoingOrdersView = (props) => {
 
   // Outstanding Invoice Aggregation
   const outstandingData = useMemo(() => {
-    const unpaidOrders = (outgoingOrders || []).filter(o => !o.isPaid || recentlyPaidIds.has(o.id));
+    const unpaidOrders = (outgoingOrders || []).filter(o =>
+      (!o.isPaid || recentlyPaidIds.has(o.id))
+      && (!o.isBackorder || Boolean(o.invoiceNumber)),
+    );
     let grandTotal = 0;
     const customerMap = {};
 
     unpaidOrders.forEach(order => {
       const custId = order.customerId;
-      const amount = (order.items || []).reduce((sum, item) => sum + ((item.count || 0) * (item.price || 0)), 0);
+      const amount = (order.items || []).reduce((sum, item) => sum + (getInvoiceQuantity(item) * (item.price || 0)), 0);
       
       if (!customerMap[custId]) {
         const c = (customers || []).find(c => c.id === custId);
@@ -578,13 +745,21 @@ const OutgoingOrdersView = (props) => {
     );
   }, [outgoingOrders, customers, search]);
 
-  const handleFilter = (key, value) => {
-    // Assuming handleFilter is part of useTable
-  }; // Not strictly needed, useTable handles it but I am injecting handleViewFile below
-
-  const handleViewFile = (file) => {
-    if (!file) return;
+  const handleViewFile = async (file, storageReference) => {
+    if (!file && !storageReference) return;
     try {
+      if (storageReference && documentStorageRootHandle) {
+        try {
+          const storedFile = await getStoredDocumentFile(documentStorageRootHandle, storageReference);
+          const storedUrl = URL.createObjectURL(storedFile);
+          window.open(storedUrl, '_blank');
+          return;
+        } catch (storageError) {
+          console.error('Could not open document-storage copy; using browser copy', storageError);
+          if (!file) throw storageError;
+          toast.warning('Could not reach document-storage. Opened the browser copy instead.');
+        }
+      }
       if (file instanceof Blob || file instanceof File) {
         const url = URL.createObjectURL(file);
         window.open(url, '_blank');
@@ -645,14 +820,48 @@ const OutgoingOrdersView = (props) => {
     setIsModalOpen(true);
   };
 
-  const handleSave = (orderData) => {
+  const persistOrderWithBackorders = async (orderData) => {
+    if (!saveOutgoingOrder) throw new Error('Save function is missing from the application context.');
+    await saveOutgoingOrder(orderData);
+
+    if (!hasBackorderedItems(orderData)) return;
+    if (orderData.isBackorder && !orderData.invoiceNumber) return;
+
+    const nextSequence = orderData.isBackorder
+      ? Number(orderData.backorderSequence || 0) + 1
+      : 1;
+    const rootOrderId = orderData.rootOrderId || orderData.id;
+    const existingBackorder = outgoingOrders.find(candidate =>
+      candidate.isBackorder
+      && String(candidate.rootOrderId) === String(rootOrderId)
+      && Number(candidate.backorderSequence) === nextSequence,
+    );
+    if (existingBackorder) return;
+
+    const nextBackorder = createBackorderOrder({ sourceOrder: orderData, sequence: nextSequence });
+    if (nextBackorder) {
+      await saveOutgoingOrder(nextBackorder);
+      toast.success(`Backorder fulfillment #${nextSequence} created.`);
+    }
+  };
+
+  const handleSave = async (orderData) => {
     if (saveOutgoingOrder) {
-      saveOutgoingOrder(orderData);
-      setIsModalOpen(false);
-      toast.success('Order saved successfully');
+      try {
+        await persistOrderWithBackorders(orderData);
+        setIsModalOpen(false);
+        toast.success('Order saved successfully');
+      } catch (error) {
+        console.error('Order save failed', error);
+        toast.error('Order could not be saved. Nothing was closed; please try again.');
+      }
     } else {
       toast.error("Save function missing in Context");
     }
+  };
+
+  const handlePersist = async (orderData) => {
+    await persistOrderWithBackorders(orderData);
   };
 
   const handleDelete = (id) => {
@@ -727,11 +936,11 @@ const OutgoingOrdersView = (props) => {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {/* FIX: Check if processedData exists */}
               {(!processedData || processedData.length === 0) ? (
-                <tr><td colSpan="8" className="p-8 text-center text-gray-500">No orders found.</td></tr>
+                <tr><td colSpan="9" className="p-8 text-center text-gray-500">No orders found.</td></tr>
               ) : processedData.map(order => {
-                const cust = customers.find(c => c.id === order.customerId);
-                const total = (order.items || []).reduce((sum, i) => sum + (i.count * i.price), 0) + (order.adjustment || 0);
-                const totalCogs = (order.items || []).reduce((sum, i) => sum + (i.count * (i.unitCost || cogs[i.sku] || 0)), 0) + (order.processingFee || 0) + (order.shippingCost || 0);
+                const cust = customers.find(c => String(c.id) === String(order.customerId));
+                const total = (order.items || []).reduce((sum, i) => sum + (getInvoiceQuantity(i) * i.price), 0) + (order.adjustment || 0);
+                const totalCogs = (order.items || []).reduce((sum, i) => sum + (getInvoiceQuantity(i) * (i.unitCost || cogs[i.sku] || 0)), 0) + (order.processingFee || 0) + (order.shippingCost || 0);
                 const orderProfit = total - totalCogs;
                 const orderMargin = total > 0 ? (orderProfit / total) * 100 : 0;
                 return (
@@ -754,7 +963,10 @@ const OutgoingOrdersView = (props) => {
                         <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block z-50">
                           <div className="bg-gray-900 dark:bg-gray-700 text-white text-xs rounded-lg py-2 px-3 shadow-lg whitespace-nowrap">
                             {(order.items || []).map((item, i) => (
-                              <div key={i} className="py-0.5">{item.sku} × {item.count}</div>
+                              <div key={i} className="py-0.5">
+                                {item.sku} × {getOrderedQuantity(item)}
+                                {getBackorderedQuantity(item) > 0 ? ` (${getBackorderedQuantity(item)} backordered)` : ''}
+                              </div>
                             ))}
                             <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900 dark:border-t-gray-700"></div>
                           </div>
@@ -769,6 +981,9 @@ const OutgoingOrdersView = (props) => {
                       {(() => {
                         if (order.isPaid) {
                           return <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-700">Paid</span>;
+                        }
+                        if (order.isBackorder && !order.invoiceNumber) {
+                          return <span className="px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">Backordered #{order.backorderSequence}</span>;
                         }
 
                         // Calculate Due Date
@@ -786,19 +1001,23 @@ const OutgoingOrdersView = (props) => {
                         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                         const isOverdue = diffDays > 0;
 
-                        if (isOverdue) {
-                          return <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700">{diffDays} Days Overdue</span>;
-                        } else {
-                          return <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">Due: {formatDate(dateObj)}</span>;
-                        }
+                        const dueBadge = isOverdue
+                          ? <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700">{diffDays} Days Overdue</span>
+                          : <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">Due: {formatDate(dateObj)}</span>;
+                        const fulfillmentBadge = order.isBackorder
+                          ? <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700">Backorder #{order.backorderSequence} shipped</span>
+                          : hasBackorderedItems(order)
+                            ? <span className="px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">Partial / backordered</span>
+                            : null;
+                        return <div className="flex flex-col items-start gap-1">{fulfillmentBadge}{dueBadge}</div>;
                       })()}
                     </td>
                     <td className="px-6 py-4 text-right flex justify-end gap-2">
-                      {order.filePO && (
-                        <button onClick={() => handleViewFile(order.filePO)} title="View PO" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-indigo-600"><FileText className="w-4 h-4" /></button>
+                      {(order.filePO || order.filePOStorage) && (
+                        <button onClick={() => handleViewFile(order.filePO, order.filePOStorage)} title="View PO" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-indigo-600"><FileText className="w-4 h-4" /></button>
                       )}
-                      {order.fileInvoice && (
-                        <button onClick={() => handleViewFile(order.fileInvoice)} title="View Invoice" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-green-600"><Receipt className="w-4 h-4" /></button>
+                      {(order.fileInvoice || order.fileInvoiceStorage) && (
+                        <button onClick={() => handleViewFile(order.fileInvoice, order.fileInvoiceStorage)} title="View Invoice" className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-green-600"><Receipt className="w-4 h-4" /></button>
                       )}
                       <button onClick={() => handleEdit(order)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-blue-600"><Eye className="w-4 h-4" /></button>
                       <button onClick={() => handleDelete(order.id)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-red-500"><Trash2 className="w-4 h-4" /></button>
@@ -902,8 +1121,11 @@ const OutgoingOrdersView = (props) => {
           cogs={cogs}
           companyLogo={companyLogo}
           outgoingOrders={outgoingOrders}
+          documentStorageRootHandle={documentStorageRootHandle}
+          orgKey={orgKey}
           onClose={() => setIsModalOpen(false)}
           onSave={handleSave}
+          onPersist={handlePersist}
         />
       )}
 

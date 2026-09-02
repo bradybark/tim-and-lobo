@@ -7,6 +7,7 @@ import {
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { useTable } from '../hooks/useTable';
 import { toast } from 'sonner';
+import { getInvoiceQuantity } from '../utils/backorders';
 
 const getPercentChange = (curr, prev) => {
   if (!prev || prev === 0) return { val: 0, color: 'text-gray-400', icon: null };
@@ -280,19 +281,19 @@ const OutgoingReportsView = ({
     const timeSeriesMap = {};
 
     relevantOrders.forEach(order => {
-      const orderSubtotal = order.items.reduce((sum, i) => sum + (i.count * i.price), 0);
+      const orderSubtotal = order.items.reduce((sum, i) => sum + (getInvoiceQuantity(i) * i.price), 0);
       let prorationFactor = 1;
       let orderRevenue = 0;
       let orderCogs = 0;
 
       if (selectedSku === 'all') {
         orderRevenue = orderSubtotal + Number(order.adjustment || 0); // shippingCharge is inside adjustment
-        orderCogs = order.items.reduce((sum, i) => sum + (i.count * i.unitCost), 0);
+        orderCogs = order.items.reduce((sum, i) => sum + (getInvoiceQuantity(i) * i.unitCost), 0);
       } else {
         const skuItems = order.items.filter(i => i.sku === selectedSku);
         if (skuItems.length === 0) return;
-        const skuRevenue = skuItems.reduce((sum, i) => sum + (i.count * i.price), 0);
-        const skuCogs = skuItems.reduce((sum, i) => sum + (i.count * i.unitCost), 0);
+        const skuRevenue = skuItems.reduce((sum, i) => sum + (getInvoiceQuantity(i) * i.price), 0);
+        const skuCogs = skuItems.reduce((sum, i) => sum + (getInvoiceQuantity(i) * i.unitCost), 0);
         prorationFactor = orderSubtotal > 0 ? skuRevenue / orderSubtotal : 0;
         orderRevenue = skuRevenue + (Number(order.adjustment || 0) * prorationFactor);
         orderCogs = skuCogs;
@@ -322,9 +323,10 @@ const OutgoingReportsView = ({
       order.items.forEach(item => {
         if (selectedSku !== 'all' && item.sku !== selectedSku) return;
         if (!totals.skuBreakdown[item.sku]) totals.skuBreakdown[item.sku] = { sku: item.sku, totalUnits: 0, totalSales: 0, totalCost: 0 };
-        totals.skuBreakdown[item.sku].totalUnits += Number(item.count);
-        totals.skuBreakdown[item.sku].totalSales += (Number(item.count) * Number(item.price));
-        totals.skuBreakdown[item.sku].totalCost += (Number(item.count) * Number(item.unitCost));
+        const invoiceQuantity = getInvoiceQuantity(item);
+        totals.skuBreakdown[item.sku].totalUnits += invoiceQuantity;
+        totals.skuBreakdown[item.sku].totalSales += (invoiceQuantity * Number(item.price));
+        totals.skuBreakdown[item.sku].totalCost += (invoiceQuantity * Number(item.unitCost));
       });
     });
 

@@ -2,11 +2,12 @@
 import React, { useRef, useState } from 'react';
 import {
   UploadCloud, Download, FileText, Users, Trash2, Image as ImageIcon, Share2,
-  DollarSign, TrendingUp, Building, Truck, Database, Briefcase, Shield, Clock
+  DollarSign, TrendingUp, Building, Truck, Database, Briefcase, Shield, Clock, FolderOpen
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ImageUploader } from '../components/ImageUploader';
 import { useInventory } from '../context/InventoryContext';
+import { getDocumentStorageRootName, initializeDocumentStorageRoot } from '../utils/documentStorage';
 
 const SETTINGS_SECTIONS = [
   { id: 'sync', label: 'Sync & Backup', icon: UploadCloud },
@@ -30,17 +31,15 @@ const SettingsView = ({
   onOptimizeImages,
   onCreateShareLink,
   onClearPartnerShipping,
-  poBackupHandle,
-  invoiceBackupHandle,
-  onSetPoHandle,
-  onSetInvoiceHandle,
+  documentStorageRootHandle,
+  onSetDocumentStorageRoot,
   autoBackupEnabled,
   onToggleAutoBackup,
   lastAutoBackupTime,
   autoBackupFolderHandle,
   onSetAutoBackupFolder
 }) => {
-  const { myCompany, setMyCompany, companyLogo, handleLogoUpload } = useInventory();
+  const { myCompany, setMyCompany, companyLogo, handleLogoUpload, companyProfileStorageStatus } = useInventory();
   const fileInputRef = useRef(null);
   const [activeSection, setActiveSection] = useState('sync');
   const [pruneMonths, setPruneMonths] = useState(12);
@@ -82,53 +81,54 @@ const SettingsView = ({
 
             <hr className="border-gray-200 dark:border-gray-700" />
 
-            {/* PC Backup Locations */}
+            {/* Permanent Document Storage */}
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">PC Backup Locations (Automated)</h3>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-slate-900/40">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Purchase Orders</h4>
-                  <p className="text-xs text-gray-500 mb-3">Copy generated POs here.</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono bg-white dark:bg-black/20 px-2 py-1 rounded text-gray-600 dark:text-gray-400 truncate max-w-[150px]">
-                      {poBackupHandle ? poBackupHandle.name : 'Not set'}
-                    </span>
-                    <button
-                      onClick={async () => {
-                        if (!onSetPoHandle) return;
-                        try {
-                          const handle = await window.showDirectoryPicker();
-                          onSetPoHandle(handle);
-                          toast.success("PO Folder Linked");
-                        } catch (e) { console.log(e); }
-                      }}
-                      className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-3 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-600"
-                    >
-                      Set Folder
-                    </button>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Permanent Document Storage</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Connect the single <span className="font-mono">document-storage</span> folder inside this project. Company profiles, uploaded PDFs, and generated document sources are routed beneath the Lobo and Timothy's Toolbox folders.
+              </p>
+              <div className="p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-slate-900/40">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <FolderOpen className="h-5 w-5 shrink-0 text-indigo-500" />
+                    <div className="min-w-0">
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">Shared root folder</h4>
+                      <p className="truncate text-xs font-mono text-gray-500">
+                        {documentStorageRootHandle ? documentStorageRootHandle.name : 'Not connected'}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-slate-900/40">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">Invoices</h4>
-                  <p className="text-xs text-gray-500 mb-3">Save attached invoices here.</p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono bg-white dark:bg-black/20 px-2 py-1 rounded text-gray-600 dark:text-gray-400 truncate max-w-[150px]">
-                      {invoiceBackupHandle ? invoiceBackupHandle.name : 'Not set'}
-                    </span>
-                    <button
-                      onClick={async () => {
-                        if (!onSetInvoiceHandle) return;
-                        try {
-                          const handle = await window.showDirectoryPicker();
-                          onSetInvoiceHandle(handle);
-                          toast.success("Invoice Folder Linked");
-                        } catch (e) { console.log(e); }
-                      }}
-                      className="text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-3 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-600"
-                    >
-                      Set Folder
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!onSetDocumentStorageRoot) return;
+                      if (!window.showDirectoryPicker) {
+                        toast.error('Use Chrome or Edge to connect document-storage.');
+                        return;
+                      }
+                      try {
+                        const handle = await window.showDirectoryPicker({
+                          id: 'tim-and-lobo-document-storage',
+                          mode: 'readwrite',
+                        });
+                        if (handle.name.toLowerCase() !== getDocumentStorageRootName()) {
+                          toast.error(`Select the folder named ${getDocumentStorageRootName()}.`);
+                          return;
+                        }
+                        await initializeDocumentStorageRoot(handle);
+                        await onSetDocumentStorageRoot(handle);
+                        toast.success('Shared document-storage root connected');
+                      } catch (error) {
+                        if (error?.name !== 'AbortError') {
+                          console.error(error);
+                          toast.error(error?.message || 'Could not connect document-storage.');
+                        }
+                      }
+                    }}
+                    className="shrink-0 text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-3 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-600"
+                  >
+                    {documentStorageRootHandle ? 'Reconnect' : 'Connect Root'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -311,12 +311,26 @@ const SettingsView = ({
             <p className="text-xs text-gray-500 dark:text-gray-400">
               This information appears on generated invoices and POs.
             </p>
+            <p className={`text-xs ${companyProfileStorageStatus === 'saved'
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : companyProfileStorageStatus === 'saving'
+                ? 'text-indigo-600 dark:text-indigo-400'
+                : companyProfileStorageStatus === 'reconnect-required' || companyProfileStorageStatus === 'error'
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-gray-500 dark:text-gray-400'
+              }`}>
+              {companyProfileStorageStatus === 'saved' && 'Saved permanently to document-storage.'}
+              {companyProfileStorageStatus === 'saving' && 'Saving company profile to document-storage…'}
+              {companyProfileStorageStatus === 'reconnect-required' && 'Reconnect document-storage in Sync & Backup to restore permanent saving.'}
+              {companyProfileStorageStatus === 'error' && 'Permanent company-profile save failed. Check the connected root.'}
+              {companyProfileStorageStatus === 'browser-only' && 'Currently stored in this browser. Connect document-storage for permanent saving.'}
+            </p>
 
             <div className="flex flex-col md:flex-row gap-6 pt-2">
               <div className="w-32 flex-shrink-0">
                 <label className="block text-xs font-medium text-gray-500 mb-1">Logo</label>
                 <div className="h-32 w-32 rounded-lg border border-dashed border-gray-300 dark:border-gray-600 overflow-hidden">
-                  <ImageUploader currentImage={companyLogo} onUpload={(_, blob) => handleLogoUpload(blob)} className="h-full w-full object-contain" placeholder={<span className="text-xs text-gray-400 text-center px-2">Click to Upload</span>} />
+                  <ImageUploader preserveOriginal currentImage={companyLogo} onUpload={(_, blob) => handleLogoUpload(blob)} className="h-full w-full object-contain" placeholder={<span className="text-xs text-gray-400 text-center px-2">Click to Upload</span>} />
                 </div>
               </div>
               <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">

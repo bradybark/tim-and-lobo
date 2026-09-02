@@ -1,6 +1,7 @@
 // src/hooks/useInventoryData.js
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { get, set } from 'idb-keyval';
+import { readCompanyProfile, storeCompanyProfile } from '../utils/documentStorage';
 import {
   LOBO_SNAPSHOTS, LOBO_POS, LOBO_SETTINGS, LOBO_VENDORS,
   LOBO_CUSTOMERS, LOBO_COGS, LOBO_WEBSITE_PRICES, LOBO_OUTGOING, LOBO_INTERNAL, LOBO_INVOICES, LOBO_MY_COMPANY, LOBO_WEBSITE_ORDERS, LOBO_EXPENSES, LOBO_EXPENSE_CATEGORIES,
@@ -49,6 +50,7 @@ const LEGACY_SEEDS = {
 
 export function useInventoryData(orgKey) {
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [dataLoadError, setDataLoadError] = useState(null);
 
   const [snapshots, setSnapshots] = useState([]);
   const [pos, setPos] = useState([]);
@@ -60,6 +62,7 @@ export function useInventoryData(orgKey) {
   const [websitePrices, setWebsitePrices] = useState({});
   const [skuDescriptions, setSkuDescriptions] = useState({});
   const [outgoingOrders, setOutgoingOrders] = useState([]);
+  const outgoingOrdersRef = useRef([]);
   const [internalOrders, setInternalOrders] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [websiteOrders, setWebsiteOrders] = useState([]);
@@ -73,12 +76,20 @@ export function useInventoryData(orgKey) {
   const [lastModifiedAt, setLastModifiedAt] = useState(null);
 
   // File System Handles (Not part of JSON export)
-  const [poBackupHandle, setPoBackupHandle] = useState(null);
-  const [invoiceBackupHandle, setInvoiceBackupHandle] = useState(null);
+  const [documentStorageRootHandle, setDocumentStorageRootHandle] = useState(null);
+  const [companyProfileStorageStatus, setCompanyProfileStorageStatus] = useState('browser-only');
+  const profileStorageHydratedRef = useRef(false);
+
+  useEffect(() => {
+    outgoingOrdersRef.current = outgoingOrders;
+  }, [outgoingOrders]);
 
   // 1. Load Data
   useEffect(() => {
     async function loadAllData() {
+      setDataLoaded(false);
+      setDataLoadError(null);
+      profileStorageHydratedRef.current = false;
       try {
         const seeds = LEGACY_SEEDS[orgKey] || LEGACY_SEEDS.lobo;
 
@@ -92,7 +103,7 @@ export function useInventoryData(orgKey) {
           savedCustomers, savedCogs, savedWebsitePrices, savedSkuDescriptions, savedOutgoing,
           savedInternal, savedInvoices, savedWebsiteOrders,
           savedMyCompany, savedLogo,
-          savedPoHandle, savedInvHandle,
+          savedDocumentStorageRootHandle,
           savedExpenses, savedExpenseCategories, savedCogsHistory, savedShipments, savedQuotes, savedLastModifiedAt
         ] = await Promise.all([
           load(`${orgKey}_snapshots`, seeds.snapshots),
@@ -110,8 +121,7 @@ export function useInventoryData(orgKey) {
           load(`${orgKey}_websiteOrders`, seeds.websiteOrders),
           load(`${orgKey}_myCompany`, seeds.myCompany),
           get(`${orgKey}_logo`),
-          get(`${orgKey}_poBackupHandle`),
-          get(`${orgKey}_invoiceBackupHandle`),
+          get('documentStorageRootHandle'),
           load(`${orgKey}_expenses`, seeds.expenses),
           load(`${orgKey}_expenseCategories`, seeds.expenseCategories),
           load(`${orgKey}_cogsHistory`, seeds.cogsHistory),
@@ -120,8 +130,9 @@ export function useInventoryData(orgKey) {
           get(`${orgKey}_lastModifiedAt`)
         ]);
 
+        let hydratedCogsHistory = savedCogsHistory || [];
         if (orgKey === 'lobo') {
-            const hasSeeded = (savedCogsHistory || []).some(h => h.poNumber === 'Initial Seed' && h.sku === 'TSB8');
+            const hasSeeded = hydratedCogsHistory.some(h => h.poNumber === 'Initial Seed' && h.sku === 'TSB8');
             if (!hasSeeded) {
                 const seedData = [
                     { id: 'seed-1', sku: 'TSB8', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 6.606, newAvgCogs: 6.606, receivedQty: 0, previousQty: 0 },
@@ -131,9 +142,35 @@ export function useInventoryData(orgKey) {
                     { id: 'seed-5', sku: 'TTSB85', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 6.137, newAvgCogs: 6.137, receivedQty: 0, previousQty: 0 },
                     { id: 'seed-6', sku: 'ACT', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 5.15, newAvgCogs: 5.15, receivedQty: 0, previousQty: 0 }
                 ];
-                savedCogsHistory = [...(savedCogsHistory || []), ...seedData];
-                await set(`${orgKey}_cogsHistory`, savedCogsHistory);
+                hydratedCogsHistory = [...hydratedCogsHistory, ...seedData];
+                await set(`${orgKey}_cogsHistory`, hydratedCogsHistory);
             }
+        }
+
+        let hydratedCompany = savedMyCompany || {};
+        let hydratedLogo = savedLogo || null;
+        if (savedDocumentStorageRootHandle) {
+          try {
+            const permanentProfile = await readCompanyProfile({
+              rootHandle: savedDocumentStorageRootHandle,
+              orgKey,
+            });
+            profileStorageHydratedRef.current = true;
+            if (permanentProfile) {
+              hydratedCompany = permanentProfile.profile;
+              hydratedLogo = permanentProfile.logo || null;
+              await set(`${orgKey}_myCompany`, hydratedCompany);
+              if (hydratedLogo) await set(`${orgKey}_logo`, hydratedLogo);
+              setCompanyProfileStorageStatus('saved');
+            } else {
+              setCompanyProfileStorageStatus('browser-only');
+            }
+          } catch (profileError) {
+            console.warn('Permanent company profile is not currently accessible', profileError);
+            setCompanyProfileStorageStatus('reconnect-required');
+          }
+        } else {
+          setCompanyProfileStorageStatus('browser-only');
         }
 
         setSnapshots(savedSnaps || []);
@@ -148,13 +185,12 @@ export function useInventoryData(orgKey) {
         setInternalOrders(savedInternal || []);
         setInvoices(savedInvoices || []);
         setWebsiteOrders(savedWebsiteOrders || []);
-        setMyCompany(savedMyCompany || {});
-        setCompanyLogo(savedLogo || null);
-        setPoBackupHandle(savedPoHandle || null);
-        setInvoiceBackupHandle(savedInvHandle || null);
+        setMyCompany(hydratedCompany);
+        setCompanyLogo(hydratedLogo);
+        setDocumentStorageRootHandle(savedDocumentStorageRootHandle || null);
         setExpenses(savedExpenses || []);
         setExpenseCategories(savedExpenseCategories || seeds.expenseCategories || []);
-        setCogsHistory(savedCogsHistory || []);
+        setCogsHistory(hydratedCogsHistory);
         setShipments(savedShipments || []);
         setQuotes(savedQuotes || []);
         setLastModifiedAt(savedLastModifiedAt || null);
@@ -168,7 +204,7 @@ export function useInventoryData(orgKey) {
         setDataLoaded(true);
       } catch (err) {
         console.error("Failed to load data", err);
-        setDataLoaded(true);
+        setDataLoadError(err?.message || 'The saved application data could not be loaded.');
       }
     }
     loadAllData();
@@ -207,16 +243,45 @@ export function useInventoryData(orgKey) {
     return () => clearTimeout(handler);
   }, [snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, expenses, expenseCategories, cogsHistory, shipments, quotes, orgKey, dataLoaded]);
 
-  // Handle Updates
-  const updatePoBackupHandle = useCallback(async (handle) => {
-    setPoBackupHandle(handle);
-    await set(`${orgKey}_poBackupHandle`, handle);
-  }, [orgKey]);
+  // Keep the organization profile mirrored in the shared OneDrive document root.
+  useEffect(() => {
+    if (!dataLoaded || !documentStorageRootHandle || !profileStorageHydratedRef.current) return;
+    const handler = setTimeout(async () => {
+      setCompanyProfileStorageStatus('saving');
+      try {
+        await storeCompanyProfile({
+          rootHandle: documentStorageRootHandle,
+          orgKey,
+          profile: myCompany,
+          logo: companyLogo,
+        });
+        setCompanyProfileStorageStatus('saved');
+      } catch (error) {
+        console.error('Failed to save permanent company profile', error);
+        setCompanyProfileStorageStatus(
+          /permission|reconnect/i.test(error?.message || '') ? 'reconnect-required' : 'error',
+        );
+      }
+    }, 1000);
+    return () => clearTimeout(handler);
+  }, [companyLogo, dataLoaded, documentStorageRootHandle, myCompany, orgKey]);
 
-  const updateInvoiceBackupHandle = useCallback(async (handle) => {
-    setInvoiceBackupHandle(handle);
-    await set(`${orgKey}_invoiceBackupHandle`, handle);
-  }, [orgKey]);
+  // Handle Updates
+  const updateDocumentStorageRootHandle = useCallback(async (handle) => {
+    await set('documentStorageRootHandle', handle);
+    const permanentProfile = await readCompanyProfile({ rootHandle: handle, orgKey });
+    profileStorageHydratedRef.current = true;
+    setDocumentStorageRootHandle(handle);
+    if (permanentProfile) {
+      setMyCompany(permanentProfile.profile);
+      setCompanyLogo(permanentProfile.logo || null);
+      await set(`${orgKey}_myCompany`, permanentProfile.profile);
+      if (permanentProfile.logo) await set(`${orgKey}_logo`, permanentProfile.logo);
+    } else {
+      await storeCompanyProfile({ rootHandle: handle, orgKey, profile: myCompany, logo: companyLogo });
+    }
+    setCompanyProfileStorageStatus('saved');
+  }, [companyLogo, myCompany, orgKey]);
 
   // 3. Image Handlers
   const handleImageUpload = useCallback(async (sku, blob) => {
@@ -240,20 +305,26 @@ export function useInventoryData(orgKey) {
   }, [orgKey]);
 
   // 4. Helper Functions for Orders
-  const saveOutgoingOrder = useCallback((order) => {
-    setOutgoingOrders(prev => {
-      const exists = prev.find(o => o.id === order.id);
-      if (exists) return prev.map(o => o.id === order.id ? order : o);
-      return [...prev, order];
-    });
-  }, []);
+  const saveOutgoingOrder = useCallback(async (order) => {
+    const currentOrders = outgoingOrdersRef.current;
+    const exists = currentOrders.some(existingOrder => existingOrder.id === order.id);
+    const updatedOrders = exists
+      ? currentOrders.map(existingOrder => existingOrder.id === order.id ? order : existingOrder)
+      : [...currentOrders, order];
+
+    outgoingOrdersRef.current = updatedOrders;
+    setOutgoingOrders(updatedOrders);
+    await set(`${orgKey}_outgoing`, updatedOrders);
+  }, [orgKey]);
 
   const deleteOutgoingOrder = useCallback((id) => {
     setOutgoingOrders(prev => prev.filter(o => o.id !== id));
   }, []);
 
   return {
+    orgKey,
     dataLoaded,
+    dataLoadError,
     snapshots, setSnapshots,
     pos, setPos,
     settings, setSettings,
@@ -270,8 +341,8 @@ export function useInventoryData(orgKey) {
     websiteOrders, setWebsiteOrders,
     myCompany, setMyCompany,
     companyLogo, handleLogoUpload,
-    poBackupHandle, updatePoBackupHandle,
-    invoiceBackupHandle, updateInvoiceBackupHandle,
+    documentStorageRootHandle, updateDocumentStorageRootHandle,
+    companyProfileStorageStatus,
     saveOutgoingOrder, deleteOutgoingOrder,
     expenses, setExpenses,
     expenseCategories, setExpenseCategories,

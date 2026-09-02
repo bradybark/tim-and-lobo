@@ -1,6 +1,7 @@
 // src/components/CustomerSalesReportModal.jsx
 import React, { useState, useMemo } from 'react';
 import { useInventory } from '../context/InventoryContext';
+import { getInvoiceQuantity } from '../utils/backorders';
 
 const formatMoney = (amount) => {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
@@ -23,12 +24,14 @@ const CustomerSalesReportModal = ({ customer, onClose }) => {
     const custOutgoing = outgoingOrders.filter(o => Number(o.customerId) === Number(customer.id));
     custOutgoing.forEach(order => {
       (order.items || []).forEach(item => {
+        const invoiceQuantity = getInvoiceQuantity(item);
+        if (invoiceQuantity <= 0) return;
         allCustomerItems.push({
           date: new Date(order.date),
           sku: item.sku,
-          count: Number(item.count) || 0,
-          revenue: (Number(item.count) || 0) * (Number(item.price) || 0),
-          cost: (Number(item.count) || 0) * (Number(item.unitCost) || 0)
+          count: invoiceQuantity,
+          revenue: invoiceQuantity * (Number(item.price) || 0),
+          cost: invoiceQuantity * (Number(item.unitCost) || 0)
         });
       });
     });

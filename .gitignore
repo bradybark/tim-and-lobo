@@ -13,6 +13,9 @@ dist-ssr
 *.local
 .env
 
+# User-managed business documents (stored locally/OneDrive, never in Git)
+document-storage/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

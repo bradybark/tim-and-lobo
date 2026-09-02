@@ -2,7 +2,7 @@
 import React, { useRef } from 'react';
 import { Icons } from './Icons';
 
-export function FileUploader({ onUpload, currentFile, className = '', label = 'Upload' }) {
+export function FileUploader({ onUpload, currentFile, className = '', label = 'Upload', accept }) {
   const fileInputRef = useRef(null);
 
   const handleClick = (e) => {
@@ -26,6 +26,7 @@ export function FileUploader({ onUpload, currentFile, className = '', label = 'U
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
+        accept={accept}
         className="hidden"
       />
       

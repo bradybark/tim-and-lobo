@@ -89,7 +89,7 @@ const CompanyDashboard = ({
 
   // Consume Context
   const {
-    dataLoaded,
+    dataLoaded, dataLoadError,
     snapshots, setSnapshots,
     pos, setPos,
     settings, setSettings,
@@ -104,9 +104,8 @@ const CompanyDashboard = ({
     internalOrders, setInternalOrders,
     invoices, setInvoices,
     websiteOrders, setWebsiteOrders,
-    poBackupHandle, updatePoBackupHandle,
-    invoiceBackupHandle, updateInvoiceBackupHandle,
-    myCompany, companyLogo,
+    documentStorageRootHandle, updateDocumentStorageRootHandle,
+    myCompany, setMyCompany, companyLogo, handleLogoUpload,
     expenses, setExpenses,
     expenseCategories, setExpenseCategories,
     cogsHistory, setCogsHistory,
@@ -424,7 +423,19 @@ const CompanyDashboard = ({
 
 
 
-  if (!dataLoaded) return <div className="p-10 text-center text-gray-500">Loading database...</div>;
+  if (!dataLoaded) {
+    return (
+      <div className="p-10 text-center text-gray-500">
+        {dataLoadError ? (
+          <div className="mx-auto max-w-xl rounded-xl border border-red-200 bg-red-50 p-5 text-red-800">
+            <p className="font-semibold">Saved data could not be loaded.</p>
+            <p className="mt-2 text-sm">Nothing has been overwritten. Reload the application and check the browser console if the problem continues.</p>
+            <p className="mt-2 text-xs font-mono">{dataLoadError}</p>
+          </div>
+        ) : 'Loading database...'}
+      </div>
+    );
+  }
 
   // Build inventory tabs dynamically based on features
   const inventoryTabs = [
@@ -547,13 +558,13 @@ const CompanyDashboard = ({
           {parentTab === 'inventory' && activeTab === 'inventory' && has('inventoryLog') && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} cogs={cogs} />}
           {activeTab === 'pos' && has('purchaseOrders') && (
             poComponentType === 'PurchaseOrderSystem'
-              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} setVendors={setVendors} skuImages={skuImages} poBackupHandle={poBackupHandle} invoiceBackupHandle={invoiceBackupHandle} myCompany={myCompany} companyLogo={companyLogo} onOpenVendors={() => { setParentTab('inventory'); setActiveTab('vendors'); }} />
+              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} setVendors={setVendors} skuImages={skuImages} documentStorageRootHandle={documentStorageRootHandle} orgKey={orgKey} myCompany={myCompany} companyLogo={companyLogo} onOpenVendors={() => { setParentTab('inventory'); setActiveTab('vendors'); }} />
               : <POView pos={pos} handleAddPO={handleAddPO} toggleReceivePO={toggleReceivePO} updateReceivedDate={updateReceivedDate} deletePO={deletePO} skuImages={skuImages} vendors={vendors} updatePOVendor={updatePOVendor} addVendor={addVendor} cogs={cogs} setCogs={setCogs} snapshots={snapshots} setSnapshots={setSnapshots} cogsHistory={cogsHistory} setCogsHistory={setCogsHistory} shipments={shipments} setShipments={setShipments} updatePOs={setPos} />
           )}
           {parentTab === 'inventory' && activeTab === 'vendors' && <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />}
           {parentTab === 'inventory' && activeTab === 'reports' && has('reports') && <ReportsView leadTimeStats={leadTimeStats} onExportLeadTimeReport={handleExportLeadTimeAction} snapshots={snapshots} pos={pos} />}
 
-          {parentTab === 'outgoing' && activeTab === 'outgoing' && has('outgoingOrders') && <OutgoingOrdersView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} customers={customers} cogs={cogs} settings={settings} companyLogo={companyLogo} />}
+          {parentTab === 'outgoing' && activeTab === 'outgoing' && has('outgoingOrders') && <OutgoingOrdersView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} customers={customers} cogs={cogs} settings={settings} companyLogo={companyLogo} documentStorageRootHandle={documentStorageRootHandle} orgKey={orgKey} />}
           {parentTab === 'outgoing' && activeTab === 'internal' && has('internalOrders') && <InternalOrdersView internalOrders={internalOrders} setInternalOrders={setInternalOrders} invoices={invoices} setInvoices={setInvoices} customers={customers} cogs={cogs} settings={settings} />}
           {parentTab === 'outgoing' && activeTab === 'website' && has('websiteOrders') && <WebsiteOrdersView websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} cogs={cogs} websitePrices={websitePrices} settings={settings} />}
           {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && hasOutgoingSection && <OutgoingReportsView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} customers={customers} settings={settings} />}
@@ -575,10 +586,8 @@ const CompanyDashboard = ({
               onOptimizeImages={handleOptimizeImages}
               onCreateShareLink={handleCreateShareLink}
               onClearPartnerShipping={handleClearPartnerShipping}
-              poBackupHandle={poBackupHandle}
-              invoiceBackupHandle={invoiceBackupHandle}
-              onSetPoHandle={updatePoBackupHandle}
-              onSetInvoiceHandle={updateInvoiceBackupHandle}
+              documentStorageRootHandle={documentStorageRootHandle}
+              onSetDocumentStorageRoot={updateDocumentStorageRootHandle}
               autoBackupEnabled={autoBackupEnabled}
               onToggleAutoBackup={handleToggleAutoBackup}
               lastAutoBackupTime={lastAutoBackupTime}
