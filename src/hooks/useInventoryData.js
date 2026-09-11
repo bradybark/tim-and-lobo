@@ -1,7 +1,11 @@
 // src/hooks/useInventoryData.js
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { get, set } from 'idb-keyval';
-import { readCompanyProfile, storeCompanyProfile } from '../utils/documentStorage';
+import {
+  COMPANY_LOGO_CHANGED_EVENT,
+  readCompanyProfile,
+  storeCompanyProfile,
+} from '../utils/documentStorage';
 import {
   LOBO_SNAPSHOTS, LOBO_POS, LOBO_SETTINGS, LOBO_VENDORS,
   LOBO_CUSTOMERS, LOBO_COGS, LOBO_WEBSITE_PRICES, LOBO_OUTGOING, LOBO_INTERNAL, LOBO_INVOICES, LOBO_MY_COMPANY, LOBO_WEBSITE_ORDERS, LOBO_EXPENSES, LOBO_EXPENSE_CATEGORIES,
@@ -77,6 +81,7 @@ export function useInventoryData(orgKey) {
 
   // File System Handles (Not part of JSON export)
   const [documentStorageRootHandle, setDocumentStorageRootHandle] = useState(null);
+  const [documentStorageLocationLabel, setDocumentStorageLocationLabel] = useState('');
   const [companyProfileStorageStatus, setCompanyProfileStorageStatus] = useState('browser-only');
   const profileStorageHydratedRef = useRef(false);
 
@@ -104,6 +109,7 @@ export function useInventoryData(orgKey) {
           savedInternal, savedInvoices, savedWebsiteOrders,
           savedMyCompany, savedLogo,
           savedDocumentStorageRootHandle,
+          savedDocumentStorageLocationLabel,
           savedExpenses, savedExpenseCategories, savedCogsHistory, savedShipments, savedQuotes, savedLastModifiedAt
         ] = await Promise.all([
           load(`${orgKey}_snapshots`, seeds.snapshots),
@@ -122,6 +128,7 @@ export function useInventoryData(orgKey) {
           load(`${orgKey}_myCompany`, seeds.myCompany),
           get(`${orgKey}_logo`),
           get('documentStorageRootHandle'),
+          load('documentStorageLocationLabel', ''),
           load(`${orgKey}_expenses`, seeds.expenses),
           load(`${orgKey}_expenseCategories`, seeds.expenseCategories),
           load(`${orgKey}_cogsHistory`, seeds.cogsHistory),
@@ -188,6 +195,7 @@ export function useInventoryData(orgKey) {
         setMyCompany(hydratedCompany);
         setCompanyLogo(hydratedLogo);
         setDocumentStorageRootHandle(savedDocumentStorageRootHandle || null);
+        setDocumentStorageLocationLabel(savedDocumentStorageLocationLabel || '');
         setExpenses(savedExpenses || []);
         setExpenseCategories(savedExpenseCategories || seeds.expenseCategories || []);
         setCogsHistory(hydratedCogsHistory);
@@ -283,6 +291,12 @@ export function useInventoryData(orgKey) {
     setCompanyProfileStorageStatus('saved');
   }, [companyLogo, myCompany, orgKey]);
 
+  const updateDocumentStorageLocationLabel = useCallback(async (label) => {
+    const normalizedLabel = String(label || '').trim();
+    setDocumentStorageLocationLabel(normalizedLabel);
+    await set('documentStorageLocationLabel', normalizedLabel);
+  }, []);
+
   // 3. Image Handlers
   const handleImageUpload = useCallback(async (sku, blob) => {
     setSkuImages((prev) => ({ ...prev, [sku]: blob }));
@@ -297,6 +311,11 @@ export function useInventoryData(orgKey) {
 
   const handleLogoUpload = useCallback(async (blob) => {
     setCompanyLogo(blob);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(COMPANY_LOGO_CHANGED_EVENT, {
+        detail: { orgKey, logo: blob },
+      }));
+    }
     try {
       await set(`${orgKey}_logo`, blob);
     } catch (err) {
@@ -342,6 +361,7 @@ export function useInventoryData(orgKey) {
     myCompany, setMyCompany,
     companyLogo, handleLogoUpload,
     documentStorageRootHandle, updateDocumentStorageRootHandle,
+    documentStorageLocationLabel, updateDocumentStorageLocationLabel,
     companyProfileStorageStatus,
     saveOutgoingOrder, deleteOutgoingOrder,
     expenses, setExpenses,

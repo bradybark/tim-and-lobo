@@ -5,6 +5,7 @@ import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { VendorCell } from '../components/VendorCell';
 import { getStoredDocumentFile, storeDocumentFile } from '../utils/documentStorage';
+import { blobToDataUrl, imageToDataUrl } from '../utils/imageDataUrl';
 
 // Helper to format currency
 const formatMoney = (amount) => {
@@ -19,15 +20,6 @@ const formatDate = (dateLike) => {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
-    });
-};
-
-const blobToBase64 = (blob) => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
     });
 };
 
@@ -176,8 +168,8 @@ const PurchaseOrderSystem = ({
         let logoImgTag = '';
         if (companyLogo) {
             try {
-                const base64 = await blobToBase64(companyLogo);
-                logoImgTag = `<img src="${base64}" class="logo-img" alt="Logo" />`;
+                const base64 = await imageToDataUrl(companyLogo);
+                logoImgTag = base64 ? `<img src="${base64}" class="logo-img" alt="Logo" />` : '';
             } catch (e) {
                 console.error("Logo processing error", e);
             }
@@ -546,7 +538,7 @@ const PurchaseOrderSystem = ({
                 return;
             }
             try {
-                const base64Data = await blobToBase64(file);
+                const base64Data = await blobToDataUrl(file);
                 const vendor = vendors.find(v => v.id == po.vendorId);
                 const vendorName = typeof vendor?.name === 'object' ? vendor.name.name : vendor?.name;
                 const storageReference = await storeDocumentFile({

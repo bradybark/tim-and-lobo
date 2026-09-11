@@ -6,15 +6,7 @@ import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { toast } from 'sonner';
 import { useInventory } from '../context/InventoryContext'; // To access myCompany
 import CustomerSalesReportModal from '../components/CustomerSalesReportModal';
-
-const blobToDataURL = (blob) => {
-    return new Promise((resolve) => {
-        if (!blob) { resolve(null); return; }
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.readAsDataURL(blob);
-    });
-};
+import { imageToDataUrl } from '../utils/imageDataUrl';
 
 const InternalOrderModal = ({ order, customers, allSkus, cogs, onClose, onSave }) => {
     // ... (Modal logic unchanged, keeping brevity here but providing full file below)
@@ -153,7 +145,7 @@ const InternalOrdersView = ({ internalOrders, setInternalOrders, invoices, setIn
     // --- HTML GENERATOR ---
     const generateInvoiceHTML = async (invoiceId, customerId, lineItems, totalDue, date) => {
         const customer = customers.find(c => c.id === Number(customerId));
-        const logoDataUrl = await blobToDataURL(companyLogo);
+        const logoDataUrl = await imageToDataUrl(companyLogo);
 
         const rowsHtml = lineItems.map(item => {
             const desc = skuDescriptions?.[item.sku] || '';

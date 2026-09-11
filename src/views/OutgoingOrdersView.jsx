@@ -17,6 +17,7 @@ import {
   getOrderedQuantity,
   hasBackorderedItems,
 } from '../utils/backorders';
+import { blobToDataUrl, imageToDataUrl } from '../utils/imageDataUrl';
 
 
 
@@ -38,16 +39,6 @@ const formatDate = (dateLike) => {
 
 const EMPTY_ARRAY = [];
 const EMPTY_OBJECT = {};
-
-const blobToDataURL = (blob) => {
-  return new Promise((resolve) => {
-    if (!blob) { resolve(null); return; }
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = () => resolve(null);
-    reader.readAsDataURL(blob);
-  });
-};
 
 const dataURLtoBlob = (dataurl) => {
     if (!dataurl || typeof dataurl !== 'string') return null;
@@ -148,7 +139,7 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, onPersis
           invoiceNumber: formData.invoiceNumber || null,
         },
       });
-      const browserCopy = await blobToDataURL(file);
+      const browserCopy = await blobToDataUrl(file);
       setFormData(prev => ({
         ...prev,
         [kind === 'invoice' ? 'fileInvoice' : 'filePO']: browserCopy,
@@ -237,7 +228,7 @@ const OrderModal = ({ order, customers, allSkus, cogs, onClose, onSave, onPersis
     const customer = customers.find(c => c.id === Number(formData.customerId));
 
     // Logo processing (Matches InternalOrdersView logic)
-    const logoDataUrl = await blobToDataURL(companyLogo);
+    const logoDataUrl = await imageToDataUrl(companyLogo);
     const logoImgTag = logoDataUrl ? `<img src="${logoDataUrl}" class="logo-img" alt="Logo" />` : '';
 
     // Document Title & Number

@@ -1,4 +1,5 @@
 const DOCUMENT_STORAGE_ROOT_NAME = 'document-storage';
+export const COMPANY_LOGO_CHANGED_EVENT = 'tim-and-lobo:company-logo-changed';
 
 const KNOWN_ORGANIZATION_FOLDERS = {
   lobo: 'lobo',
@@ -25,6 +26,8 @@ const invalidPathCharacters = /[<>:"/\\|?*]/g;
 
 export const getDocumentStorageRootName = () => DOCUMENT_STORAGE_ROOT_NAME;
 
+export const isDocumentStorageRootName = (name) => name === DOCUMENT_STORAGE_ROOT_NAME;
+
 export const sanitizePathSegment = (value, fallback = 'unknown') => {
   const cleaned = String(value ?? '')
     .trim()
@@ -47,6 +50,18 @@ export const getOrganizationStorageFolder = (orgKey) => {
   if (normalized.includes('lobo')) return 'lobo';
   if (normalized.includes('tim')) return 'timothys-toolbox';
   return normalized;
+};
+
+export const getOrganizationDocumentStoragePath = (rootHandle, orgKey) =>
+  `${rootHandle?.name || DOCUMENT_STORAGE_ROOT_NAME}/${getOrganizationStorageFolder(orgKey)}`;
+
+export const hasDocumentStoragePermission = async (rootHandle, mode = 'read') => {
+  if (!rootHandle || typeof rootHandle.queryPermission !== 'function') return false;
+  try {
+    return await rootHandle.queryPermission({ mode }) === 'granted';
+  } catch {
+    return false;
+  }
 };
 
 const getBusinessYear = (businessDate) => {
@@ -121,6 +136,9 @@ const normalizeLogoBlob = (logo) => {
 };
 
 export const initializeDocumentStorageRoot = async (rootHandle) => {
+  if (!isDocumentStorageRootName(rootHandle?.name)) {
+    throw new Error(`Select the folder named exactly ${DOCUMENT_STORAGE_ROOT_NAME}.`);
+  }
   await ensurePermission(rootHandle);
   for (const organization of ['lobo', 'timothys-toolbox']) {
     const organizationHandle = await getOrCreateDirectory(rootHandle, organization);

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Trash2, Eye, Download, X, FileText, Send } from 'lucide-react';
 import { toast } from 'sonner';
+import { imageToDataUrl } from '../utils/imageDataUrl';
 
 // Helper to format currency
 const formatMoney = (amount) => {
@@ -15,15 +16,6 @@ const formatDate = (dateLike) => {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
-    });
-};
-
-const blobToBase64 = (blob) => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
     });
 };
 
@@ -77,8 +69,8 @@ const InvoicesView = ({
         let logoImgTag = '';
         if (companyLogo) {
             try {
-                const base64 = await blobToBase64(companyLogo);
-                logoImgTag = `<img src="${base64}" class="logo-img" alt="Logo" />`;
+                const base64 = await imageToDataUrl(companyLogo);
+                logoImgTag = base64 ? `<img src="${base64}" class="logo-img" alt="Logo" />` : '';
             } catch (e) {
                 console.error("Logo processing error", e);
             }

@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getStoredDocumentFile,
+  hasDocumentStoragePermission,
+  getOrganizationDocumentStoragePath,
   initializeDocumentStorageRoot,
+  isDocumentStorageRootName,
   readCompanyProfile,
   storeCompanyProfile,
   storeDocumentFile,
@@ -63,6 +66,42 @@ test('initializes both organizations under one shared root', async () => {
     await organizationDirectory.getDirectoryHandle('vendors');
     await organizationDirectory.getDirectoryHandle('company-profile');
   }
+});
+
+test('describes the organization-relative destination beneath the selected root', () => {
+  assert.equal(
+    getOrganizationDocumentStoragePath({ name: 'document-storage' }, 'lobo'),
+    'document-storage/lobo',
+  );
+  assert.equal(
+    getOrganizationDocumentStoragePath({ name: 'document-storage' }, 'timothy'),
+    'document-storage/timothys-toolbox',
+  );
+});
+
+test('requires the shared root folder name exactly', async () => {
+  assert.equal(isDocumentStorageRootName('document-storage'), true);
+  assert.equal(isDocumentStorageRootName('Document-Storage'), false);
+  await assert.rejects(
+    initializeDocumentStorageRoot(new MemoryDirectoryHandle('Document-Storage')),
+    /named exactly document-storage/i,
+  );
+});
+
+test('checks saved root permission without requesting it', async () => {
+  let requestCount = 0;
+  const promptHandle = {
+    queryPermission: async () => 'prompt',
+    requestPermission: async () => { requestCount += 1; return 'granted'; },
+  };
+  const grantedHandle = {
+    queryPermission: async () => 'granted',
+    requestPermission: async () => { requestCount += 1; return 'granted'; },
+  };
+
+  assert.equal(await hasDocumentStoragePermission(promptHandle), false);
+  assert.equal(await hasDocumentStoragePermission(grantedHandle), true);
+  assert.equal(requestCount, 0);
 });
 
 test('stores and reads a permanent company profile with its original logo type', async () => {

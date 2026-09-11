@@ -7,7 +7,12 @@ import {
 import { toast } from 'sonner';
 import { ImageUploader } from '../components/ImageUploader';
 import { useInventory } from '../context/InventoryContext';
-import { getDocumentStorageRootName, initializeDocumentStorageRoot } from '../utils/documentStorage';
+import {
+  getDocumentStorageRootName,
+  getOrganizationDocumentStoragePath,
+  initializeDocumentStorageRoot,
+  isDocumentStorageRootName,
+} from '../utils/documentStorage';
 
 const SETTINGS_SECTIONS = [
   { id: 'sync', label: 'Sync & Backup', icon: UploadCloud },
@@ -39,12 +44,28 @@ const SettingsView = ({
   autoBackupFolderHandle,
   onSetAutoBackupFolder
 }) => {
-  const { myCompany, setMyCompany, companyLogo, handleLogoUpload, companyProfileStorageStatus } = useInventory();
+  const {
+    orgKey,
+    myCompany,
+    setMyCompany,
+    companyLogo,
+    handleLogoUpload,
+    companyProfileStorageStatus,
+    documentStorageLocationLabel,
+    updateDocumentStorageLocationLabel,
+  } = useInventory();
   const fileInputRef = useRef(null);
   const [activeSection, setActiveSection] = useState('sync');
   const [pruneMonths, setPruneMonths] = useState(12);
   const [isShortenEnabled, setIsShortenEnabled] = useState(false);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [documentStorageLocationDraft, setDocumentStorageLocationDraft] = useState(documentStorageLocationLabel || '');
+  const rootNeedsReconnect = companyProfileStorageStatus === 'reconnect-required';
+  const rootConnectionLabel = !documentStorageRootHandle
+    ? 'Not connected'
+    : rootNeedsReconnect
+      ? 'Reconnect required'
+      : 'Connected';
 
   const handleImportClick = () => { if (!onImportBackup) return; if (fileInputRef.current) fileInputRef.current.click(); };
   const handleFileChange = (e) => {
@@ -85,16 +106,24 @@ const SettingsView = ({
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Permanent Document Storage</h3>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Connect the single <span className="font-mono">document-storage</span> folder inside this project. Company profiles, uploaded PDFs, and generated document sources are routed beneath the Lobo and Timothy's Toolbox folders.
+                Connect the single <span className="font-mono">document-storage</span> folder that holds the permanent records for both organizations. Company profiles, uploaded PDFs, and generated document sources are routed automatically.
               </p>
-              <div className="p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-slate-900/40">
-                <div className="flex items-center justify-between gap-4">
+              <div className="space-y-4 p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-slate-900/40">
+                <div className="flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <FolderOpen className="h-5 w-5 shrink-0 text-indigo-500" />
                     <div className="min-w-0">
-                      <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">Shared root folder</h4>
-                      <p className="truncate text-xs font-mono text-gray-500">
-                        {documentStorageRootHandle ? documentStorageRootHandle.name : 'Not connected'}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">Shared root folder</h4>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${documentStorageRootHandle && !rootNeedsReconnect
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                        }`}>
+                          {rootConnectionLabel}
+                        </span>
+                      </div>
+                      <p className="mt-1 break-all text-xs font-mono text-gray-600 dark:text-gray-300">
+                        {documentStorageRootHandle ? documentStorageRootHandle.name : 'No folder selected'}
                       </p>
                     </div>
                   </div>
@@ -111,7 +140,7 @@ const SettingsView = ({
                           id: 'tim-and-lobo-document-storage',
                           mode: 'readwrite',
                         });
-                        if (handle.name.toLowerCase() !== getDocumentStorageRootName()) {
+                        if (!isDocumentStorageRootName(handle.name)) {
                           toast.error(`Select the folder named ${getDocumentStorageRootName()}.`);
                           return;
                         }
@@ -129,6 +158,45 @@ const SettingsView = ({
                   >
                     {documentStorageRootHandle ? 'Reconnect' : 'Connect Root'}
                   </button>
+                </div>
+
+                {documentStorageRootHandle && (
+                  <div className="rounded-lg border border-gray-200 bg-white/70 px-3 py-2 dark:border-gray-700 dark:bg-black/20">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">This organization saves under</p>
+                    <p className="mt-1 break-all text-xs font-mono text-gray-800 dark:text-gray-200">
+                      {getOrganizationDocumentStoragePath(documentStorageRootHandle, orgKey)}
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label htmlFor="document-storage-location-label" className="block text-xs font-medium text-gray-800 dark:text-gray-200">
+                    OneDrive location label
+                  </label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      id="document-storage-location-label"
+                      type="text"
+                      value={documentStorageLocationDraft}
+                      onChange={(event) => setDocumentStorageLocationDraft(event.target.value)}
+                      placeholder="OneDrive > Surplus Tools > Tim and Lobo Business Documents > document-storage"
+                      className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!updateDocumentStorageLocationLabel) return;
+                        await updateDocumentStorageLocationLabel(documentStorageLocationDraft);
+                        toast.success('Document-storage location label saved');
+                      }}
+                      className="shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+                    >
+                      Save label
+                    </button>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+                    Browsers do not reveal a folder's full Windows path. Save a label here so you can identify the connected OneDrive location.
+                  </p>
                 </div>
               </div>
             </div>

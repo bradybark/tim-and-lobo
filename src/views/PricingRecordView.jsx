@@ -3,16 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { ArrowLeft, Save, Plus, Trash2, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { useInventory } from '../context/InventoryContext';
-
-// Helper to convert blob to base64
-const blobToBase64 = (blob) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
+import { imageToDataUrl } from '../utils/imageDataUrl';
 
 const PricingRecordView = ({ customer, cogs, settings, onSave, onBack }) => {
   const { myCompany, companyLogo, skuDescriptions } = useInventory();
@@ -42,9 +33,9 @@ const PricingRecordView = ({ customer, cogs, settings, onSave, onBack }) => {
     let logoImgTag = '';
     if (companyLogo) {
       try {
-        const base64 = await blobToBase64(companyLogo);
+        const base64 = await imageToDataUrl(companyLogo);
         // Updated to be black background for lobo logo if needed, but styling allows it to be flexible.
-        logoImgTag = `<img src="${base64}" style="max-height: 80px; display: block; margin-bottom: 10px;" alt="Logo" />`;
+        logoImgTag = base64 ? `<img src="${base64}" style="max-height: 80px; display: block; margin-bottom: 10px;" alt="Logo" />` : '';
       } catch (e) {
         console.error("Logo processing error", e);
       }

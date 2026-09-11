@@ -2,25 +2,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Briefcase, Sun, Moon, Package } from 'lucide-react';
 import { Toaster } from 'sonner';
-import { get } from 'idb-keyval';
+import { get, set } from 'idb-keyval';
 import CompanyDashboard from './views/CompanyDashboard';
 import { getOrganizationConfig } from './utils/orgConfig';
+import {
+  COMPANY_LOGO_CHANGED_EVENT,
+  hasDocumentStoragePermission,
+  readCompanyProfile,
+} from './utils/documentStorage';
 import { InventoryProvider } from './context/InventoryContext'; 
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 const OrgCard = ({ name, description, themeColor, logo, onClick }) => {
   const hasColor = Boolean(themeColor);
-  const [logoUrl, setLogoUrl] = useState(null);
+  const logoUrl = useMemo(() => {
+    if (logo && logo instanceof Blob) return URL.createObjectURL(logo);
+    if (typeof logo === 'string' && logo.startsWith('data:image/')) return logo;
+    return null;
+  }, [logo]);
 
   useEffect(() => {
-    if (logo && logo instanceof Blob) {
-      const url = URL.createObjectURL(logo);
-      setLogoUrl(url);
-      return () => URL.revokeObjectURL(url);
-    } else {
-      setLogoUrl(null);
-    }
-  }, [logo]);
+    if (!logoUrl?.startsWith('blob:')) return undefined;
+    return () => URL.revokeObjectURL(logoUrl);
+  }, [logoUrl]);
 
   return (
     <div className="h-full w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800/70 shadow-xl flex flex-col items-center px-10 py-8 transition-transform hover:scale-[1.02] duration-300">
@@ -65,8 +69,23 @@ function App() {
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgLogos, setOrgLogos] = useState({}); // Store logos keyed by org id
 
-  // Load company logos for home page display
   useEffect(() => {
+    const handleLogoChange = (event) => {
+      const { orgKey, logo } = event.detail || {};
+      if (!orgKey || !logo) return;
+      setOrgLogos((current) => ({ ...current, [orgKey]: logo }));
+    };
+    window.addEventListener(COMPANY_LOGO_CHANGED_EVENT, handleLogoChange);
+    return () => window.removeEventListener(COMPANY_LOGO_CHANGED_EVENT, handleLogoChange);
+  }, []);
+
+  // Refresh company logos whenever the organization chooser becomes visible.
+  // IndexedDB provides an immediate local copy; an already-authorized shared root
+  // is then treated as the permanent source without prompting on page load.
+  useEffect(() => {
+    if (selectedOrg) return undefined;
+    let cancelled = false;
+
     const loadLogos = async () => {
       const logos = {};
       for (const org of organizations) {
@@ -76,14 +95,36 @@ function App() {
           if (logo) {
             logos[org.id] = logo;
           }
-        } catch (e) {
+        } catch {
           console.log(`Could not load logo for ${org.id}`);
         }
       }
-      setOrgLogos(logos);
+      if (!cancelled) setOrgLogos(logos);
+
+      try {
+        const rootHandle = await get('documentStorageRootHandle');
+        if (!await hasDocumentStoragePermission(rootHandle, 'read')) return;
+
+        const permanentLogos = { ...logos };
+        for (const org of organizations) {
+          try {
+            const permanentProfile = await readCompanyProfile({ rootHandle, orgKey: org.id });
+            if (permanentProfile?.logo) {
+              permanentLogos[org.id] = permanentProfile.logo;
+              await set(`${org.id}_logo`, permanentProfile.logo);
+            }
+          } catch (error) {
+            console.warn(`Could not load permanent logo for ${org.id}`, error);
+          }
+        }
+        if (!cancelled) setOrgLogos(permanentLogos);
+      } catch (error) {
+        console.warn('Could not access the shared document-storage root for organization logos', error);
+      }
     };
     loadLogos();
-  }, [organizations]);
+    return () => { cancelled = true; };
+  }, [organizations, selectedOrg]);
 
   // --- Theme Management --- DEFAULT TO DARK MODE
   const [isDarkMode, setIsDarkMode] = useState(() => {
