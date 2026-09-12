@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Download, Upload, Check, Trash2, ArrowLeft, FileText, Calendar, DollarSign, Eye, X } from 'lucide-react';
+import { Plus, Download, Upload, Check, Trash2, ArrowLeft, FileText, Calendar, DollarSign, Eye, Search, SlidersHorizontal, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { VendorCell } from '../components/VendorCell';
 import { getStoredDocumentFile, storeDocumentFile } from '../utils/documentStorage';
 import { blobToDataUrl, imageToDataUrl } from '../utils/imageDataUrl';
+import { filterPurchaseOrderList, preparePurchaseOrdersForList } from '../utils/purchaseOrderFilters';
 
 // Helper to format currency
 const formatMoney = (amount) => {
@@ -21,6 +22,26 @@ const formatDate = (dateLike) => {
         day: 'numeric',
         year: 'numeric',
     });
+};
+
+const PURCHASE_ORDER_VIEWS = [
+    { id: 'all', label: 'All orders' },
+    { id: 'open', label: 'Open' },
+    { id: 'needs-invoice', label: 'Needs invoice' },
+    { id: 'due-soon', label: 'Due soon' },
+    { id: 'overdue', label: 'Overdue' },
+    { id: 'paid', label: 'Paid' },
+];
+
+const DEFAULT_LIST_FILTERS = {
+    search: '',
+    vendorId: 'all',
+    startDate: '',
+    endDate: '',
+    orderStage: 'all',
+    invoiceState: 'all',
+    minTotal: '',
+    maxTotal: '',
 };
 
 const PurchaseOrderSystem = ({
@@ -39,6 +60,11 @@ const PurchaseOrderSystem = ({
     const [previewPO, setPreviewPO] = useState(null);
     const [previewHtml, setPreviewHtml] = useState('');
     const [activeSubTab, setActiveSubTab] = useState('orders'); // orders, reports
+
+    // --- Purchase Order List Filters ---
+    const [listView, setListView] = useState('all');
+    const [listFilters, setListFilters] = useState(DEFAULT_LIST_FILTERS);
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
     // --- New Vendor Inline State ---
     const [showNewVendorInput, setShowNewVendorInput] = useState(false);
@@ -133,7 +159,51 @@ const PurchaseOrderSystem = ({
     }), [filteredPOs]);
 
     // --- List View Logic ---
-    const { processedData, sortConfig, handleSort, filters, handleFilter } = useTable(validPOs, { key: 'orderDate', direction: 'desc' });
+    const purchaseOrderListRows = useMemo(
+        () => preparePurchaseOrdersForList(validPOs, vendors),
+        [validPOs, vendors],
+    );
+    const filteredPurchaseOrderList = useMemo(
+        () => filterPurchaseOrderList(purchaseOrderListRows, { ...listFilters, view: listView }),
+        [purchaseOrderListRows, listFilters, listView],
+    );
+    const { processedData, sortConfig, handleSort } = useTable(
+        filteredPurchaseOrderList,
+        { key: 'orderDate', direction: 'desc' },
+    );
+    const updateListFilter = (key, value) => {
+        setListFilters(current => ({ ...current, [key]: value }));
+    };
+    const resetListFilters = () => {
+        setListView('all');
+        setListFilters(DEFAULT_LIST_FILTERS);
+    };
+    const hasAdvancedListFilters = Boolean(
+        listFilters.startDate
+        || listFilters.endDate
+        || listFilters.orderStage !== 'all'
+        || listFilters.invoiceState !== 'all'
+        || listFilters.minTotal !== ''
+        || listFilters.maxTotal !== '',
+    );
+    const hasActiveListFilters = Boolean(
+        listView !== 'all'
+        || listFilters.search
+        || listFilters.vendorId !== 'all'
+        || hasAdvancedListFilters,
+    );
+    const selectedListVendor = vendors.find(vendor => String(vendor.id) === String(listFilters.vendorId));
+    const activeListFilterLabels = [
+        listView !== 'all' ? PURCHASE_ORDER_VIEWS.find(view => view.id === listView)?.label : null,
+        listFilters.search ? `Search: ${listFilters.search}` : null,
+        listFilters.vendorId !== 'all' ? `Vendor: ${selectedListVendor?.name?.name || selectedListVendor?.name || 'Unknown'}` : null,
+        listFilters.startDate ? `From: ${formatDate(listFilters.startDate)}` : null,
+        listFilters.endDate ? `Through: ${formatDate(listFilters.endDate)}` : null,
+        listFilters.orderStage !== 'all' ? `Stage: ${listFilters.orderStage}` : null,
+        listFilters.invoiceState !== 'all' ? `Invoice: ${listFilters.invoiceState}` : null,
+        listFilters.minTotal !== '' ? `Minimum: ${formatMoney(Number(listFilters.minTotal))}` : null,
+        listFilters.maxTotal !== '' ? `Maximum: ${formatMoney(Number(listFilters.maxTotal))}` : null,
+    ].filter(Boolean);
 
     // --- Helpers ---
 
@@ -480,17 +550,6 @@ const PurchaseOrderSystem = ({
             }
             return p;
         }));
-    };
-
-    const calculateDaysUntilDue = (dueDate) => {
-        if (!dueDate) return null;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const due = new Date(dueDate);
-        due.setHours(0, 0, 0, 0);
-        const diffTime = due.getTime() - today.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        return diffDays;
     };
 
     const selectedVendor = vendors.find(v => v.id == newPO.vendorId);
@@ -1047,7 +1106,7 @@ const PurchaseOrderSystem = ({
     const renderOrdersList = () => (
         <div className="space-y-6">
 
-            <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
                 <div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">Purchase Orders</h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400">Manage your vendor orders</p>
@@ -1057,27 +1116,145 @@ const PurchaseOrderSystem = ({
                 </button>
             </div>
 
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-4">
+                <div className="flex items-center gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-700">
+                    {PURCHASE_ORDER_VIEWS.map(view => (
+                        <button
+                            key={view.id}
+                            type="button"
+                            onClick={() => setListView(view.id)}
+                            className={`shrink-0 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${listView === view.id
+                                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                                : 'border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'
+                            }`}
+                        >
+                            {view.label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex flex-col lg:flex-row gap-3">
+                    <label className="relative flex-1 min-w-0">
+                        <span className="sr-only">Search purchase orders</span>
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                        <input
+                            type="search"
+                            value={listFilters.search}
+                            onChange={event => updateListFilter('search', event.target.value)}
+                            placeholder="Search PO #, vendor, invoice, SKU, or status"
+                            className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        />
+                    </label>
+
+                    <label className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Vendor</span>
+                        <select
+                            value={listFilters.vendorId}
+                            onChange={event => updateListFilter('vendorId', event.target.value)}
+                            className="min-w-48 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                        >
+                            <option value="all">All vendors</option>
+                            {[...vendors]
+                                .sort((a, b) => String(a.name?.name || a.name).localeCompare(String(b.name?.name || b.name)))
+                                .map(vendor => (
+                                    <option key={vendor.id} value={vendor.id}>{vendor.name?.name || vendor.name}</option>
+                                ))}
+                        </select>
+                    </label>
+
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setShowAdvancedFilters(current => !current)}
+                            className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${hasAdvancedListFilters
+                                ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300'
+                                : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700'
+                            }`}
+                            aria-expanded={showAdvancedFilters}
+                        >
+                            <SlidersHorizontal className="w-4 h-4" /> More filters
+                        </button>
+                        {hasActiveListFilters && (
+                            <button
+                                type="button"
+                                onClick={resetListFilters}
+                                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+                            >
+                                Clear all
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {(showAdvancedFilters || hasAdvancedListFilters) && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-900/40">
+                        <label className="space-y-1">
+                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">Order date from</span>
+                            <input type="date" value={listFilters.startDate} onChange={event => updateListFilter('startDate', event.target.value)} className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white" />
+                        </label>
+                        <label className="space-y-1">
+                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">Order date through</span>
+                            <input type="date" value={listFilters.endDate} onChange={event => updateListFilter('endDate', event.target.value)} className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white" />
+                        </label>
+                        <label className="space-y-1">
+                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">Order stage</span>
+                            <select value={listFilters.orderStage} onChange={event => updateListFilter('orderStage', event.target.value)} className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                                <option value="all">Any stage</option>
+                                <option value="Draft">Draft</option>
+                                <option value="Sent">Sent</option>
+                                <option value="Received">Received</option>
+                                <option value="Paid">Paid</option>
+                            </select>
+                        </label>
+                        <label className="space-y-1">
+                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">Invoice</span>
+                            <select value={listFilters.invoiceState} onChange={event => updateListFilter('invoiceState', event.target.value)} className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+                                <option value="all">Any invoice state</option>
+                                <option value="missing">Missing invoice</option>
+                                <option value="uploaded">Invoice received</option>
+                            </select>
+                        </label>
+                        <label className="space-y-1">
+                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">Minimum total</span>
+                            <input type="number" min="0" step="0.01" value={listFilters.minTotal} onChange={event => updateListFilter('minTotal', event.target.value)} placeholder="$0" className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white" />
+                        </label>
+                        <label className="space-y-1">
+                            <span className="block text-xs font-medium text-gray-500 dark:text-gray-400">Maximum total</span>
+                            <input type="number" min="0" step="0.01" value={listFilters.maxTotal} onChange={event => updateListFilter('maxTotal', event.target.value)} placeholder="Any" className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white" />
+                        </label>
+                    </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span>Showing {processedData.length} of {validPOs.length} purchase orders</span>
+                    {activeListFilterLabels.length > 0 && (
+                        <div className="flex flex-wrap justify-end gap-1.5" aria-label="Active filters">
+                            {activeListFilterLabels.map(label => (
+                                <span key={label} className="rounded-full bg-indigo-50 px-2 py-1 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">{label}</span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead className="bg-gray-50 dark:bg-gray-700">
                             <tr>
-                                <SortableHeaderCell label="PO #" sortKey="poNumber" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.poNumber} />
-                                <SortableHeaderCell label="Vendor" sortKey="vendorName" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.vendorName} />
-                                <SortableHeaderCell label="Date" sortKey="orderDate" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.orderDate} />
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Invoice Info</th>
-                                <SortableHeaderCell label="Status" sortKey="status" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.status} />
-                                <SortableHeaderCell label="Total" sortKey="totalAmount" currentSort={sortConfig} onSort={handleSort} onFilter={handleFilter} filterValue={filters.totalAmount} className="text-right" />
+                                <SortableHeaderCell label="PO #" sortKey="poNumber" currentSort={sortConfig} onSort={handleSort} filterable={false} />
+                                <SortableHeaderCell label="Vendor" sortKey="vendorName" currentSort={sortConfig} onSort={handleSort} filterable={false} />
+                                <SortableHeaderCell label="Order Date" sortKey="orderDate" currentSort={sortConfig} onSort={handleSort} filterable={false} />
+                                <SortableHeaderCell label="Invoice" sortKey="invoiceDate" currentSort={sortConfig} onSort={handleSort} filterable={false} />
+                                <SortableHeaderCell label="Status" sortKey="paymentSort" currentSort={sortConfig} onSort={handleSort} filterable={false} />
+                                <SortableHeaderCell label="Total" sortKey="totalAmount" currentSort={sortConfig} onSort={handleSort} filterable={false} className="text-right" />
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {processedData.map((po) => {
-                                const vendor = vendors.find(v => v.id == po.vendorId);
-                                const vendorName = vendor ? (vendor.name?.name || vendor.name) : '-';
-                                const hasDocs = po.documents && po.documents.length > 0;
-                                const daysUntilDue = calculateDaysUntilDue(po.dueDate);
-                                const hasInvoice = hasDocs || po.invoiceDate;
+                                const hasDocs = Boolean(po.documents?.length);
+                                const { vendorName, hasInvoice, daysUntilDue } = po;
 
                                 return (
                                     <tr key={po.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
@@ -1135,7 +1312,7 @@ const PurchaseOrderSystem = ({
                                                         className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 hover:bg-red-200 cursor-pointer"
                                                         title="Click to mark as Paid"
                                                     >
-                                                        Due in {daysUntilDue} day{daysUntilDue !== 1 ? 's' : ''}
+                                                        {po.paymentLabel}
                                                     </button>
                                                 ) : (
                                                     <button
@@ -1175,6 +1352,14 @@ const PurchaseOrderSystem = ({
                                     </tr>
                                 );
                             })}
+                            {processedData.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} className="px-6 py-12 text-center">
+                                        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">No purchase orders match these filters.</p>
+                                        <button type="button" onClick={resetListFilters} className="mt-2 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">Clear filters</button>
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>

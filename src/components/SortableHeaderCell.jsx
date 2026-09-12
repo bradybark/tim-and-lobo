@@ -11,7 +11,8 @@ export const SortableHeaderCell = ({
   onFilter, 
   filterValue, 
   className = "",
-  tooltip = null
+  tooltip = null,
+  filterable = true,
 }) => {
   return (
     <th 
@@ -40,18 +41,19 @@ export const SortableHeaderCell = ({
           </div>
         </div>
 
-        {/* Filter Input */}
-        <div className="relative w-full">
-          <input
-            type="text"
-            placeholder="Filter..."
-            value={filterValue || ''}
-            onChange={(e) => onFilter(sortKey, e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
-          />
-          <Search className="absolute right-1.5 top-1.5 text-gray-300 w-3 h-3 pointer-events-none" />
-        </div>
+        {filterable && (
+          <div className="relative w-full">
+            <input
+              type="text"
+              placeholder="Filter..."
+              value={filterValue || ''}
+              onChange={(e) => onFilter(sortKey, e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
+            />
+            <Search className="absolute right-1.5 top-1.5 text-gray-300 w-3 h-3 pointer-events-none" />
+          </div>
+        )}
       </div>
     </th>
   );
