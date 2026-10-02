@@ -16,11 +16,49 @@ import {
 
 const SETTINGS_SECTIONS = [
   { id: 'sync', label: 'Sync & Backup', icon: UploadCloud },
+  { id: 'updates', label: 'Updates', icon: FileText },
   { id: 'sharing', label: 'Sharing', icon: Share2 },
   { id: 'business', label: 'Business Data', icon: Briefcase },
   { id: 'data', label: 'Data Management', icon: Database },
   { id: 'maintenance', label: 'Maintenance', icon: Shield },
   { id: 'company', label: 'Company Profile', icon: Building },
+];
+
+const APP_RELEASES = [
+  {
+    version: '2026.10.02.3',
+    date: 'October 2, 2026',
+    title: 'Live update history',
+    notes: [
+      'Added this Updates page with a visible live build number and release notes.',
+      'Changed document-storage reconnects to reauthorize the saved folder directly.',
+      'Prevented an older saved folder state from replacing a newly connected folder.',
+    ],
+  },
+  {
+    version: '2026.09.11',
+    date: 'September 11, 2026',
+    title: 'Faster purchase order review',
+    notes: [
+      'Added PO search, saved views, sorting, and filters for vendors, dates, status, invoices, and totals.',
+    ],
+  },
+  {
+    version: '2026.09.10',
+    date: 'September 10, 2026',
+    title: 'Document storage and printable logos',
+    notes: [
+      'Improved permanent document storage and made company logos display reliably on printable documents.',
+    ],
+  },
+  {
+    version: '2026.09.02',
+    date: 'September 2, 2026',
+    title: 'Permanent storage and backorders',
+    notes: [
+      'Added shared permanent document storage and backorder invoice handling.',
+    ],
+  },
 ];
 
 const SettingsView = ({
@@ -275,6 +313,67 @@ const SettingsView = ({
               <button onClick={handleShareClick} disabled={isGeneratingLink} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
                 {isGeneratingLink ? 'Generating...' : 'Copy Share Link'}
               </button>
+            </div>
+          </div>
+        );
+
+      case 'updates':
+        return (
+          <div className="space-y-6">
+            <div className="overflow-hidden rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50 via-white to-violet-50 p-5 dark:border-indigo-800/60 dark:from-indigo-950/50 dark:via-slate-950 dark:to-violet-950/40">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">
+                      Current live build
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-950 dark:text-white">{APP_RELEASES[0].title}</h3>
+                  <p className="mt-1 max-w-xl text-xs leading-relaxed text-gray-600 dark:text-gray-300">
+                    If you can see the build number shown here, this release is active in the app you opened.
+                  </p>
+                </div>
+                <div className="shrink-0 rounded-xl border border-indigo-200 bg-white/80 px-4 py-3 text-left shadow-sm dark:border-indigo-800 dark:bg-slate-900/80 sm:text-right">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Build</p>
+                  <p className="mt-1 font-mono text-sm font-bold text-indigo-700 dark:text-indigo-300">{APP_RELEASES[0].version}</p>
+                  <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">{APP_RELEASES[0].date}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">What changed</h3>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Recent improvements available in the live application.</p>
+            </div>
+
+            <div className="space-y-3">
+              {APP_RELEASES.map((release, index) => (
+                <article key={release.version} className="rounded-xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-800 dark:bg-slate-900/50">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${index === 0 ? 'bg-emerald-500 ring-4 ring-emerald-100 dark:ring-emerald-900/40' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{release.title}</h4>
+                          {index === 0 && <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">Current</span>}
+                        </div>
+                        <ul className="mt-2 space-y-1.5">
+                          {release.notes.map(note => (
+                            <li key={note} className="flex gap-2 text-xs leading-relaxed text-gray-600 dark:text-gray-300">
+                              <span className="text-indigo-500">•</span>
+                              <span>{note}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="pl-5 text-left sm:pl-0 sm:text-right">
+                      <p className="font-mono text-[11px] font-semibold text-gray-700 dark:text-gray-300">{release.version}</p>
+                      <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-500">{release.date}</p>
+                    </div>
+                  </div>
+                </article>
+              ))}
             </div>
           </div>
         );
