@@ -84,6 +84,10 @@ export function useInventoryData(orgKey) {
   const [documentStorageLocationLabel, setDocumentStorageLocationLabel] = useState('');
   const [companyProfileStorageStatus, setCompanyProfileStorageStatus] = useState('browser-only');
   const profileStorageHydratedRef = useRef(false);
+  // A reconnect can complete while the initial IndexedDB load is still reading an
+  // older folder handle. Keep that older async work from replacing the newly
+  // selected handle and incorrectly putting the UI back into reconnect-required.
+  const documentStorageRevisionRef = useRef(0);
 
   useEffect(() => {
     outgoingOrdersRef.current = outgoingOrders;
@@ -92,6 +96,7 @@ export function useInventoryData(orgKey) {
   // 1. Load Data
   useEffect(() => {
     async function loadAllData() {
+      const documentStorageRevision = documentStorageRevisionRef.current;
       setDataLoaded(false);
       setDataLoadError(null);
       profileStorageHydratedRef.current = false;
@@ -156,7 +161,7 @@ export function useInventoryData(orgKey) {
 
         let hydratedCompany = savedMyCompany || {};
         let hydratedLogo = savedLogo || null;
-        if (savedDocumentStorageRootHandle) {
+        if (savedDocumentStorageRootHandle && documentStorageRevision === documentStorageRevisionRef.current) {
           try {
             const permanentProfile = await readCompanyProfile({
               rootHandle: savedDocumentStorageRootHandle,
@@ -168,15 +173,21 @@ export function useInventoryData(orgKey) {
               hydratedLogo = permanentProfile.logo || null;
               await set(`${orgKey}_myCompany`, hydratedCompany);
               if (hydratedLogo) await set(`${orgKey}_logo`, hydratedLogo);
-              setCompanyProfileStorageStatus('saved');
+              if (documentStorageRevision === documentStorageRevisionRef.current) {
+                setCompanyProfileStorageStatus('saved');
+              }
             } else {
-              setCompanyProfileStorageStatus('browser-only');
+              if (documentStorageRevision === documentStorageRevisionRef.current) {
+                setCompanyProfileStorageStatus('browser-only');
+              }
             }
           } catch (profileError) {
             console.warn('Permanent company profile is not currently accessible', profileError);
-            setCompanyProfileStorageStatus('reconnect-required');
+            if (documentStorageRevision === documentStorageRevisionRef.current) {
+              setCompanyProfileStorageStatus('reconnect-required');
+            }
           }
-        } else {
+        } else if (documentStorageRevision === documentStorageRevisionRef.current) {
           setCompanyProfileStorageStatus('browser-only');
         }
 
@@ -194,7 +205,9 @@ export function useInventoryData(orgKey) {
         setWebsiteOrders(savedWebsiteOrders || []);
         setMyCompany(hydratedCompany);
         setCompanyLogo(hydratedLogo);
-        setDocumentStorageRootHandle(savedDocumentStorageRootHandle || null);
+        if (documentStorageRevision === documentStorageRevisionRef.current) {
+          setDocumentStorageRootHandle(savedDocumentStorageRootHandle || null);
+        }
         setDocumentStorageLocationLabel(savedDocumentStorageLocationLabel || '');
         setExpenses(savedExpenses || []);
         setExpenseCategories(savedExpenseCategories || seeds.expenseCategories || []);
@@ -276,6 +289,8 @@ export function useInventoryData(orgKey) {
 
   // Handle Updates
   const updateDocumentStorageRootHandle = useCallback(async (handle) => {
+    documentStorageRevisionRef.current += 1;
+    setCompanyProfileStorageStatus('saving');
     await set('documentStorageRootHandle', handle);
     const permanentProfile = await readCompanyProfile({ rootHandle: handle, orgKey });
     profileStorageHydratedRef.current = true;
