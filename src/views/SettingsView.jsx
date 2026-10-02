@@ -131,15 +131,27 @@ const SettingsView = ({
                     type="button"
                     onClick={async () => {
                       if (!onSetDocumentStorageRoot) return;
-                      if (!window.showDirectoryPicker) {
-                        toast.error('Use Chrome or Edge to connect document-storage.');
-                        return;
-                      }
                       try {
-                        const handle = await window.showDirectoryPicker({
-                          id: 'tim-and-lobo-document-storage',
-                          mode: 'readwrite',
-                        });
+                        let handle = documentStorageRootHandle;
+
+                        // A handle restored from IndexedDB commonly returns
+                        // "prompt" after a reload. Re-authorize that exact handle
+                        // from this click so Chrome retains the connection.
+                        if (handle && typeof handle.requestPermission === 'function') {
+                          const permission = await handle.requestPermission({ mode: 'readwrite' });
+                          if (permission !== 'granted') {
+                            throw new Error('Read and write access to document-storage was not granted.');
+                          }
+                        } else {
+                          if (!window.showDirectoryPicker) {
+                            toast.error('Use Chrome or Edge to connect document-storage.');
+                            return;
+                          }
+                          handle = await window.showDirectoryPicker({
+                            id: 'tim-and-lobo-document-storage',
+                            mode: 'readwrite',
+                          });
+                        }
                         if (!isDocumentStorageRootName(handle.name)) {
                           toast.error(`Select the folder named ${getDocumentStorageRootName()}.`);
                           return;
