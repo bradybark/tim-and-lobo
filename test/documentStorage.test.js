@@ -143,7 +143,7 @@ test('routes a customer PDF by organization, customer, year, direction, and reco
 
   assert.equal(
     reference.relativePath,
-    'lobo/customers/tool-source-lenexa,-ks--42/2026/outgoing/invoices/00041-010--99/final/invoice-final.pdf',
+    'lobo/customers/2026/outgoing-invoices/99/final/invoice-final.pdf',
   );
   const restored = await getStoredDocumentFile(root, reference);
   assert.equal(restored.type, 'application/pdf');

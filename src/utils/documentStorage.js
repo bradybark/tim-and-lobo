@@ -112,6 +112,9 @@ const extensionFor = (file) => {
   return existing?.toLowerCase() || MIME_EXTENSIONS[file.type] || 'bin';
 };
 
+const limitPathSegment = (value, fallback, maxLength) =>
+  sanitizePathSegment(value, fallback).slice(0, maxLength).replace(/[. -]+$/g, '') || fallback;
+
 const checksumSha256 = async (file) => {
   if (!globalThis.crypto?.subtle) return null;
   const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
@@ -230,20 +233,22 @@ export const storeDocumentFile = async ({
   if (!['incoming', 'outgoing'].includes(direction)) throw new Error('Document direction must be incoming or outgoing.');
 
   const organizationFolder = getOrganizationStorageFolder(orgKey);
-  const partyFolder = `${sanitizePathSegment(partyName, partyType.slice(0, -1))}--${sanitizePathSegment(partyId, 'unassigned')}`;
   const year = getBusinessYear(businessDate);
-  const recordFolder = `${sanitizePathSegment(recordLabel, documentType)}--${sanitizePathSegment(recordId, 'record')}`;
   const safeArea = sanitizePathSegment(area, 'originals');
   const extension = extensionFor(file);
   const baseName = String(file.name || `${documentType}.${extension}`).replace(/\.[^.]+$/, '');
-  const fileName = `${sanitizePathSegment(baseName, documentType)}.${extension}`;
+  const fileName = `${limitPathSegment(baseName, documentType, 64)}.${extension}`;
+
+  // Keep the physical path compact. OneDrive roots are often already deeply
+  // nested, and the older descriptive hierarchy could exceed Windows' path
+  // length limit and surface as a misleading NotFoundError. Human-readable
+  // party and record labels remain available in record.json.
+  const recordFolder = limitPathSegment(recordId, 'record', 48);
   const directorySegments = [
     organizationFolder,
     partyType,
-    partyFolder,
     year,
-    direction,
-    sanitizePathSegment(documentType, 'documents'),
+    `${direction}-${sanitizePathSegment(documentType, 'documents')}`,
     recordFolder,
     safeArea,
   ];
@@ -284,7 +289,7 @@ export const storeDocumentFile = async ({
   );
 
   return {
-    storageVersion: 1,
+    storageVersion: 2,
     relativePath,
     manifestPath: [...recordDirectorySegments, 'record.json'].join('/'),
     routing: {

@@ -26,13 +26,15 @@ const SETTINGS_SECTIONS = [
 
 const APP_RELEASES = [
   {
-    version: '2026.10.02.3',
+    version: '2026.10.02.4',
     date: 'October 2, 2026',
-    title: 'Live update history',
+    title: 'Reliable OneDrive invoice storage',
     notes: [
       'Added this Updates page with a visible live build number and release notes.',
       'Changed document-storage reconnects to reauthorize the saved folder directly.',
       'Prevented an older saved folder state from replacing a newly connected folder.',
+      'Shortened stored invoice paths to avoid Windows and OneDrive path-length failures.',
+      'Added separate messages for unreadable invoice files and unwritable storage folders.',
     ],
   },
   {

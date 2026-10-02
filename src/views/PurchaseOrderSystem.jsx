@@ -596,8 +596,16 @@ const PurchaseOrderSystem = ({
                 toast.error('Connect the shared document-storage root in Settings before uploading an invoice.');
                 return;
             }
+            let base64Data;
             try {
-                const base64Data = await blobToDataUrl(file);
+                base64Data = await blobToDataUrl(file);
+            } catch (err) {
+                console.error('Could not read selected invoice file', err);
+                toast.error('The selected invoice PDF could not be read. Re-select the file and make sure it is available on this device.');
+                return;
+            }
+
+            try {
                 const vendor = vendors.find(v => v.id == po.vendorId);
                 const vendorName = typeof vendor?.name === 'object' ? vendor.name.name : vendor?.name;
                 const storageReference = await storeDocumentFile({
@@ -628,8 +636,10 @@ const PurchaseOrderSystem = ({
                     storage: storageReference,
                 };
             } catch (err) {
-                console.error("Error reading file", err);
-                toast.error(err?.message || "Failed to store invoice.");
+                console.error('Could not store invoice in document-storage', err);
+                toast.error(err?.name === 'NotFoundError'
+                    ? 'The connected document-storage folder could not be written. Reconnect it in Settings and try again.'
+                    : err?.message || 'Failed to store invoice.');
                 return;
             }
         }
