@@ -57,6 +57,9 @@ const PurchaseOrderSystem = ({
     onOpenVendors
 }) => {
     const [viewMode, setViewMode] = useState('list'); // list, create
+    const savingPO = useRef(false);
+    const [isSavingPO, setIsSavingPO] = useState(false);
+    const [saveMessage, setSaveMessage] = useState('');
     const [previewPO, setPreviewPO] = useState(null);
     const [previewHtml, setPreviewHtml] = useState('');
     const [activeSubTab, setActiveSubTab] = useState('orders'); // orders, reports
@@ -394,6 +397,7 @@ const PurchaseOrderSystem = ({
     };
 
     const handleCreateStart = () => {
+        setSaveMessage('');
         setNewPO({
             poNumber: '',
             vendorId: '',
@@ -422,6 +426,7 @@ const PurchaseOrderSystem = ({
     };
 
     const handleEditPO = (po) => {
+        setSaveMessage('');
         setNewPO({
             ...po,
             termDays: po.termDays || 0,
@@ -474,8 +479,9 @@ const PurchaseOrderSystem = ({
     };
 
     const savePO = async () => {
+        if (savingPO.current) return;
         if (!newPO.vendorId) {
-            toast.error("Please select a vendor");
+            setSaveMessage('Select a vendor before saving this purchase order.');
             return;
         }
         const totalAmount = newPO.items.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
@@ -489,14 +495,38 @@ const PurchaseOrderSystem = ({
             documents: newPO.documents || []
         };
 
-        // Store the generated PO source under the shared root before saving its reference.
-        if (documentStorageRootHandle && !isUpdate) {
+        savingPO.current = true;
+        setIsSavingPO(true);
+        setSaveMessage('Saving the purchase order in this browser…');
+        const slowSave = setTimeout(() => {
+            setSaveMessage('Chrome is still saving this purchase order. Keep the form open.');
+        }, 8000);
+        try {
+            await updatePOs(current => {
+                if (!isUpdate) return [...current, finalPO];
+                if (!current.some(po => po.id === finalPO.id)) throw new Error('The original order was removed.');
+                return current.map(po => po.id === finalPO.id ? { ...po, ...finalPO } : po);
+            });
+            setViewMode('list');
+            toast.success(`Purchase order ${finalPO.poNumber} saved in this browser.`);
+        } catch (error) {
+            setSaveMessage(`Purchase order could not be saved. Your entries are still here. ${error?.message || 'Try again.'}`);
+            return;
+        } finally {
+            clearTimeout(slowSave);
+            savingPO.current = false;
+            setIsSavingPO(false);
+        }
+
+        // Store the printable copy separately after the order is durable.
+        if (documentStorageRootHandle && !finalPO.generatedPOStorage) {
+            const waiting = setTimeout(() => toast.info(`PO ${finalPO.poNumber} is saved locally. Its OneDrive document is still pending.`), 10000);
             try {
                 const vendor = vendors.find(v => v.id == finalPO.vendorId);
                 const html = await generatePOHtml(finalPO, vendor);
                 const vendorName = typeof vendor?.name === 'object' ? vendor.name.name : vendor?.name;
                 const generatedFile = new File([html], `${finalPO.poNumber}.html`, { type: 'text/html' });
-                finalPO.generatedPOStorage = await storeDocumentFile({
+                const generatedPOStorage = await storeDocumentFile({
                     rootHandle: documentStorageRootHandle,
                     orgKey,
                     partyType: 'vendors',
@@ -514,20 +544,14 @@ const PurchaseOrderSystem = ({
                         purchaseOrderNumber: finalPO.poNumber,
                     },
                 });
+                await updatePOs(current => current.map(po => po.id === finalPO.id ? { ...po, generatedPOStorage } : po));
             } catch (err) {
                 console.error("Backup failed", err);
-                toast.error(err?.message || "Failed to save generated PO to document-storage.");
+                toast.warning(`PO ${finalPO.poNumber} is saved locally. Its OneDrive document could not be saved.`);
+            } finally {
+                clearTimeout(waiting);
             }
         }
-
-        // Update state after storage so the permanent path is retained with the PO.
-        if (isUpdate) {
-            updatePOs(pos.map(p => p.id === finalPO.id ? finalPO : p));
-        } else {
-            updatePOs([...pos, finalPO]);
-        }
-
-        setViewMode('list');
     };
 
     const handleMarkPaid = (poId) => {
@@ -759,10 +783,10 @@ const PurchaseOrderSystem = ({
 
     if (viewMode === 'create') {
         return (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 max-w-5xl mx-auto space-y-6">
+            <fieldset disabled={isSavingPO} aria-label="Purchase order" className="min-w-0 bg-white dark:bg-gray-800 rounded-lg shadow p-6 max-w-5xl mx-auto space-y-6">
                 <div className="flex justify-between items-center border-b pb-4 dark:border-gray-700">
                     <h2 className="text-xl font-bold dark:text-white">{newPO.id ? 'Edit' : 'Create'} Purchase Order</h2>
-                    <button onClick={() => setViewMode('list')} className="text-gray-500 hover:text-gray-700 dark:text-gray-400">Cancel</button>
+                    <button disabled={isSavingPO} onClick={() => setViewMode('list')} className="text-gray-500 hover:text-gray-700 dark:text-gray-400">Cancel</button>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1105,10 +1129,11 @@ const PurchaseOrderSystem = ({
                     />
                 </div>
 
-                <div className="flex justify-end pt-4">
-                    <button onClick={savePO} className="bg-indigo-600 text-white px-6 py-2 rounded shadow hover:bg-indigo-700">Save Purchase Order</button>
+                <div className="flex flex-wrap items-center justify-end gap-3 pt-4">
+                    <span role="status" className="text-sm text-gray-700 dark:text-gray-300">{saveMessage}</span>
+                    <button type="button" disabled={isSavingPO} onClick={savePO} className="bg-indigo-600 text-white px-6 py-2 rounded shadow hover:bg-indigo-700 disabled:cursor-wait">{isSavingPO ? 'Saving…' : 'Save Purchase Order'}</button>
                 </div>
-            </div>
+            </fieldset>
         );
     }
 

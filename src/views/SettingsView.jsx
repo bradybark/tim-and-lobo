@@ -10,7 +10,6 @@ import { useInventory } from '../context/InventoryContext';
 import {
   getDocumentStorageRootName,
   getOrganizationDocumentStoragePath,
-  initializeDocumentStorageRoot,
   isDocumentStorageRootName,
 } from '../utils/documentStorage';
 
@@ -25,6 +24,16 @@ const SETTINGS_SECTIONS = [
 ];
 
 const APP_RELEASES = [
+  {
+    version: '2026.11.20.2',
+    date: 'November 20, 2026',
+    title: 'Shared folder reconnect',
+    notes: [
+      'Reconnect folder opens the folder picker again if the saved OneDrive connection stops responding.',
+      'Settings shows folder access separately while the company profile and logo load.',
+      'Timothy’s purchase orders save in the browser before their printable copies are filed in OneDrive.',
+    ],
+  },
   {
     version: '2026.10.02.4',
     date: 'October 2, 2026',
@@ -91,6 +100,7 @@ const SettingsView = ({
     companyLogo,
     handleLogoUpload,
     companyProfileStorageStatus,
+    documentFolderStatus,
     documentStorageLocationLabel,
     updateDocumentStorageLocationLabel,
   } = useInventory();
@@ -100,12 +110,39 @@ const SettingsView = ({
   const [isShortenEnabled, setIsShortenEnabled] = useState(false);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [documentStorageLocationDraft, setDocumentStorageLocationDraft] = useState(documentStorageLocationLabel || '');
-  const rootNeedsReconnect = companyProfileStorageStatus === 'reconnect-required';
-  const rootConnectionLabel = !documentStorageRootHandle
-    ? 'Not connected'
-    : rootNeedsReconnect
-      ? 'Reconnect required'
-      : 'Connected';
+  const [folderMessage, setFolderMessage] = useState('');
+  const pickerAttempt = useRef(0);
+  const rootConnectionLabel = {
+    connected: 'Connected', connecting: 'Connecting…', checking: 'Checking…',
+    'reconnect-required': 'Reconnect required', disconnected: 'Not connected',
+  }[documentFolderStatus];
+
+  const chooseDocumentFolder = async () => {
+    const attempt = ++pickerAttempt.current;
+    if (!window.showDirectoryPicker) {
+      setFolderMessage('Open this app in Chrome or Edge to choose the document folder.');
+      return;
+    }
+    setFolderMessage('Select the shared document-storage folder in the folder picker.');
+    try {
+      // Open the picker directly from the click, even when the old handle stalls.
+      const handle = await window.showDirectoryPicker({ id: 'tim-and-lobo-document-storage', mode: 'readwrite' });
+      if (attempt !== pickerAttempt.current) return;
+      if (!isDocumentStorageRootName(handle.name)) {
+        setFolderMessage(`Select the folder named ${getDocumentStorageRootName()}.`);
+        return;
+      }
+      setFolderMessage('Checking access to the selected folder…');
+      await onSetDocumentStorageRoot(handle);
+      if (attempt === pickerAttempt.current) {
+        setFolderMessage('');
+        toast.success('Shared document-storage root connected');
+      }
+    } catch (error) {
+      if (attempt !== pickerAttempt.current) return;
+      setFolderMessage(error?.name === 'AbortError' ? '' : error?.message || 'Could not connect to the selected folder. Try again.');
+    }
+  };
 
   const handleImportClick = () => { if (!onImportBackup) return; if (fileInputRef.current) fileInputRef.current.click(); };
   const handleFileChange = (e) => {
@@ -149,13 +186,13 @@ const SettingsView = ({
                 Connect the single <span className="font-mono">document-storage</span> folder that holds the permanent records for both organizations. Company profiles, uploaded PDFs, and generated document sources are routed automatically.
               </p>
               <div className="space-y-4 p-4 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-slate-900/40">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-wrap items-start gap-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <FolderOpen className="h-5 w-5 shrink-0 text-indigo-500" />
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">Shared root folder</h4>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${documentStorageRootHandle && !rootNeedsReconnect
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${documentFolderStatus === 'connected'
                           ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                           : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                         }`}>
@@ -169,48 +206,14 @@ const SettingsView = ({
                   </div>
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (!onSetDocumentStorageRoot) return;
-                      try {
-                        let handle = documentStorageRootHandle;
-
-                        // A handle restored from IndexedDB commonly returns
-                        // "prompt" after a reload. Re-authorize that exact handle
-                        // from this click so Chrome retains the connection.
-                        if (handle && typeof handle.requestPermission === 'function') {
-                          const permission = await handle.requestPermission({ mode: 'readwrite' });
-                          if (permission !== 'granted') {
-                            throw new Error('Read and write access to document-storage was not granted.');
-                          }
-                        } else {
-                          if (!window.showDirectoryPicker) {
-                            toast.error('Use Chrome or Edge to connect document-storage.');
-                            return;
-                          }
-                          handle = await window.showDirectoryPicker({
-                            id: 'tim-and-lobo-document-storage',
-                            mode: 'readwrite',
-                          });
-                        }
-                        if (!isDocumentStorageRootName(handle.name)) {
-                          toast.error(`Select the folder named ${getDocumentStorageRootName()}.`);
-                          return;
-                        }
-                        await initializeDocumentStorageRoot(handle);
-                        await onSetDocumentStorageRoot(handle);
-                        toast.success('Shared document-storage root connected');
-                      } catch (error) {
-                        if (error?.name !== 'AbortError') {
-                          console.error(error);
-                          toast.error(error?.message || 'Could not connect document-storage.');
-                        }
-                      }
-                    }}
-                    className="shrink-0 text-xs bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-3 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-600"
+                    onClick={chooseDocumentFolder}
+                    disabled={documentFolderStatus === 'connecting'}
+                    className="shrink-0 cursor-pointer rounded bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-wait"
                   >
-                    {documentStorageRootHandle ? 'Reconnect' : 'Connect Root'}
+                    {documentFolderStatus === 'connecting' ? 'Connecting…' : documentStorageRootHandle ? 'Reconnect folder' : 'Choose folder'}
                   </button>
                 </div>
+                {folderMessage && <p role="status" className="text-xs text-gray-700 dark:text-gray-200">{folderMessage}</p>}
 
                 {documentStorageRootHandle && (
                   <div className="rounded-lg border border-gray-200 bg-white/70 px-3 py-2 dark:border-gray-700 dark:bg-black/20">

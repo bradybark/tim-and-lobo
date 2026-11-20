@@ -1,8 +1,12 @@
 // src/hooks/useInventoryData.js
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { get, set, setMany } from 'idb-keyval';
+import { createStore, get, promisifyRequest, set, setMany } from 'idb-keyval';
+import { toast } from 'sonner';
+import { getPoComponent } from '../utils/orgConfig';
 import {
   COMPANY_LOGO_CHANGED_EVENT,
+  hasDocumentStoragePermission,
+  initializeDocumentStorageRoot,
   readCompanyProfile,
   storeCompanyProfile,
 } from '../utils/documentStorage';
@@ -12,6 +16,8 @@ import {
   TIMOTHY_SNAPSHOTS, TIMOTHY_POS, TIMOTHY_SETTINGS, TIMOTHY_VENDORS,
   TIMOTHY_CUSTOMERS, TIMOTHY_COGS, TIMOTHY_WEBSITE_PRICES, TIMOTHY_OUTGOING, TIMOTHY_INTERNAL, TIMOTHY_INVOICES, TIMOTHY_MY_COMPANY, TIMOTHY_WEBSITE_ORDERS, TIMOTHY_EXPENSES, TIMOTHY_EXPENSE_CATEGORIES
 } from '../constants/seedData';
+
+const inventoryStore = createStore('keyval-store', 'keyval');
 
 const LEGACY_SEEDS = {
   lobo: {
@@ -53,11 +59,13 @@ const LEGACY_SEEDS = {
 };
 
 export function useInventoryData(orgKey) {
+  const immediatePOWrites = getPoComponent(orgKey) === 'PurchaseOrderSystem';
   const [dataLoaded, setDataLoaded] = useState(false);
   const [dataLoadError, setDataLoadError] = useState(null);
 
   const [snapshots, setSnapshots] = useState([]);
   const [pos, setPos] = useState([]);
+  const initialPOs = useRef([]);
   const [settings, setSettings] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [skuImages, setSkuImages] = useState({});
@@ -81,6 +89,7 @@ export function useInventoryData(orgKey) {
 
   // File System Handles (Not part of JSON export)
   const [documentStorageRootHandle, setDocumentStorageRootHandle] = useState(null);
+  const [documentFolderStatus, setDocumentFolderStatus] = useState('checking');
   const [documentStorageLocationLabel, setDocumentStorageLocationLabel] = useState('');
   const [companyProfileStorageStatus, setCompanyProfileStorageStatus] = useState('browser-only');
   const [profileStorageReady, setProfileStorageReady] = useState(false);
@@ -96,6 +105,7 @@ export function useInventoryData(orgKey) {
   // older folder handle. Keep that older async work from replacing the newly
   // selected handle and incorrectly putting the UI back into reconnect-required.
   const documentStorageRevisionRef = useRef(0);
+  useEffect(() => () => { documentStorageRevisionRef.current++; }, []);
 
   useEffect(() => {
     outgoingOrdersRef.current = outgoingOrders;
@@ -168,7 +178,8 @@ export function useInventoryData(orgKey) {
         }
 
         setSnapshots(savedSnaps || []);
-        setPos(savedPos || []);
+        initialPOs.current = savedPos || [];
+        setPos(initialPOs.current);
         setSettings(savedSettings || []);
         setVendors(savedVendors || []);
         setCustomers(savedCustomers || []);
@@ -216,20 +227,41 @@ export function useInventoryData(orgKey) {
     let active = true;
     const current = () => active && revision === documentStorageRevisionRef.current;
     const timer = setTimeout(() => {
-      if (current()) setCompanyProfileStorageStatus('reconnect-required');
+      if (current()) setDocumentFolderStatus('reconnect-required');
+    }, 20000);
+    async function restoreFolder() {
+      try {
+        const rootHandle = await get('documentStorageRootHandle');
+        if (!current()) return;
+        if (!rootHandle) {
+          setDocumentFolderStatus('disconnected');
+          return;
+        }
+        setDocumentStorageRootHandle(rootHandle);
+        const granted = await hasDocumentStoragePermission(rootHandle, 'readwrite');
+        if (current()) setDocumentFolderStatus(granted ? 'connected' : 'reconnect-required');
+      } catch {
+        if (current()) setDocumentFolderStatus('reconnect-required');
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    restoreFolder();
+    return () => { active = false; clearTimeout(timer); };
+  }, [dataLoaded]);
+
+  useEffect(() => {
+    const rootHandle = documentStorageRootHandle;
+    if (!rootHandle) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      if (active) setCompanyProfileStorageStatus('error');
     }, 20000);
     async function loadSharedProfile() {
       try {
         setCompanyProfileStorageStatus('checking');
-        const rootHandle = await get('documentStorageRootHandle');
-        if (!current()) return;
-        if (!rootHandle) {
-          setCompanyProfileStorageStatus('browser-only');
-          return;
-        }
-        setDocumentStorageRootHandle(rootHandle);
         const stored = await readCompanyProfile({ rootHandle, orgKey });
-        if (!current()) return;
+        if (!active) return;
         if (stored) {
           if (!profileEdits.current.company) setMyCompany(stored.profile);
           if (stored.logo && !profileEdits.current.logo) {
@@ -241,7 +273,7 @@ export function useInventoryData(orgKey) {
         setProfileStorageReady(true);
         setCompanyProfileStorageStatus(stored ? 'saved' : 'browser-only');
       } catch (error) {
-        if (current()) {
+        if (active) {
           console.warn('Shared company profile is unavailable', error);
           setCompanyProfileStorageStatus('reconnect-required');
         }
@@ -251,17 +283,18 @@ export function useInventoryData(orgKey) {
     }
     loadSharedProfile();
     return () => { active = false; clearTimeout(timer); };
-  }, [dataLoaded, orgKey]);
+  }, [documentStorageRootHandle, orgKey]);
 
   // 2. Auto-Save Data
   useEffect(() => {
     if (!dataLoaded) return;
 
     const values = {
-      snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions,
+      snapshots, settings, vendors, customers, cogs, websitePrices, skuDescriptions,
       outgoing: outgoingOrders, internal: internalOrders, invoices, websiteOrders, myCompany,
       expenses, expenseCategories, cogsHistory, shipments, quotes,
     };
+    if (!immediatePOWrites) values.pos = pos;
     // Opening a dashboard establishes a baseline. Only persist subsequent edits.
     if (!lastInventory.current) {
       lastInventory.current = values;
@@ -286,7 +319,25 @@ export function useInventoryData(orgKey) {
     }, 1000);
 
     return () => clearTimeout(handler);
-  }, [snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, expenses, expenseCategories, cogsHistory, shipments, quotes, orgKey, dataLoaded]);
+  }, [snapshots, pos, immediatePOWrites, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, myCompany, expenses, expenseCategories, cogsHistory, shipments, quotes, orgKey, dataLoaded]);
+
+  // Commit POs immediately. A delayed document attachment must merge into the
+  // latest orders, including writes from another dashboard or browser window.
+  const updatePurchaseOrders = useCallback((change) => {
+    const committed = inventoryStore('readwrite', async store => {
+      const key = `${orgKey}_pos`;
+      const stored = await promisifyRequest(store.get(key));
+      const next = typeof change === 'function' ? change(stored ?? initialPOs.current) : change;
+      const now = new Date().toISOString();
+      store.put(next, key);
+      store.put(now, `${orgKey}_lastModifiedAt`);
+      await promisifyRequest(store.transaction);
+      setPos(next);
+      setLastModifiedAt(now);
+    });
+    committed.catch(() => toast.error('Chrome could not save the purchase order changes.'));
+    return committed;
+  }, [orgKey]);
 
   // Keep the organization profile mirrored in the shared OneDrive document root.
   useEffect(() => {
@@ -315,22 +366,36 @@ export function useInventoryData(orgKey) {
 
   // Handle Updates
   const updateDocumentStorageRootHandle = useCallback(async (handle) => {
-    documentStorageRevisionRef.current += 1;
-    setCompanyProfileStorageStatus('saving');
-    await set('documentStorageRootHandle', handle);
-    const permanentProfile = await readCompanyProfile({ rootHandle: handle, orgKey });
-    setProfileStorageReady(true);
-    setDocumentStorageRootHandle(handle);
-    if (permanentProfile) {
-      setMyCompany(permanentProfile.profile);
-      setCompanyLogo(permanentProfile.logo || null);
-      await set(`${orgKey}_myCompany`, permanentProfile.profile);
-      if (permanentProfile.logo) await set(`${orgKey}_logo`, permanentProfile.logo);
-    } else {
-      await storeCompanyProfile({ rootHandle: handle, orgKey, profile: myCompany, logo: companyLogo });
+    const revision = ++documentStorageRevisionRef.current;
+    const current = () => revision === documentStorageRevisionRef.current;
+    setDocumentFolderStatus('connecting');
+    let timer;
+    try {
+      const connect = async () => {
+        await initializeDocumentStorageRoot(handle);
+        if (!current()) return;
+        await set('documentStorageRootHandle', handle);
+        if (!current()) return;
+        if (handle !== documentStorageRootHandle) setProfileStorageReady(false);
+        setDocumentStorageRootHandle(handle);
+        setDocumentFolderStatus('connected');
+      };
+      await Promise.race([
+        connect(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('The folder did not respond. Check that it opens in OneDrive, then choose it again.')), 20000);
+        }),
+      ]);
+    } catch (error) {
+      if (current()) {
+        documentStorageRevisionRef.current++;
+        setDocumentFolderStatus('reconnect-required');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
     }
-    setCompanyProfileStorageStatus('saved');
-  }, [companyLogo, myCompany, orgKey]);
+  }, [documentStorageRootHandle]);
 
   const updateDocumentStorageLocationLabel = useCallback(async (label) => {
     const normalizedLabel = String(label || '').trim();
@@ -387,7 +452,7 @@ export function useInventoryData(orgKey) {
     dataLoaded,
     dataLoadError,
     snapshots, setSnapshots,
-    pos, setPos,
+    pos, setPos: immediatePOWrites ? updatePurchaseOrders : setPos,
     settings, setSettings,
     vendors, setVendors,
     skuImages, setSkuImages,
@@ -402,7 +467,7 @@ export function useInventoryData(orgKey) {
     websiteOrders, setWebsiteOrders,
     myCompany, setMyCompany: editCompany,
     companyLogo, handleLogoUpload,
-    documentStorageRootHandle, updateDocumentStorageRootHandle,
+    documentStorageRootHandle, updateDocumentStorageRootHandle, documentFolderStatus,
     documentStorageLocationLabel, updateDocumentStorageLocationLabel,
     companyProfileStorageStatus,
     saveOutgoingOrder, deleteOutgoingOrder,

@@ -174,7 +174,7 @@ const CompanyDashboard = ({
     const mergeArray = (fileArr, currentArr, setter) => {
       if (!fileArr) return;
       if (!forceOverwrite && Array.isArray(fileArr) && fileArr.length === 0 && currentArr.length > 0) return;
-      setter(fileArr);
+      return setter(fileArr);
     };
     const mergeObj = (fileObj, currentObj, setter) => {
       if (!fileObj) return;
@@ -183,8 +183,8 @@ const CompanyDashboard = ({
       setter(fileObj);
     };
 
+    await mergeArray(data.pos, pos, setPos);
     mergeArray(data.snapshots, snapshots, setSnapshots);
-    mergeArray(data.pos, pos, setPos);
     mergeArray(data.settings, settings, setSettings);
     mergeArray(data.vendors, vendors, setVendors);
     mergeArray(data.customers, customers, setCustomers);
@@ -248,7 +248,7 @@ const CompanyDashboard = ({
         const diff = fileTime - browserTime;
         if (diff > FIVE_MIN) {
           // File is clearly newer — import from file
-          handleImportBackup(json);
+          await handleImportBackup(json);
           await finishLink(handle);
           return;
         } else if (diff < -FIVE_MIN) {
@@ -659,7 +659,7 @@ const CompanyDashboard = ({
               </button>
               <button
                 onClick={async () => {
-                  handleImportBackup(conflictData.fileData, { forceOverwrite: true });
+                  await handleImportBackup(conflictData.fileData, { forceOverwrite: true });
                   await finishLink(conflictData.handle);
                   setConflictData(null);
                 }}
