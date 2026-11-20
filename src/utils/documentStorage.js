@@ -100,11 +100,28 @@ const walkDirectories = async (rootHandle, segments, create = false) => {
   return current;
 };
 
-const writeFile = async (directoryHandle, fileName, contents) => {
+const readOptionalFile = async (directory, name) => {
+  try {
+    return await (await directory.getFileHandle(name)).getFile();
+  } catch (error) {
+    if (error.name === 'NotFoundError') return null;
+    throw error;
+  }
+};
+
+const writeFile = async (directoryHandle, fileName, contents, onlyIfEmpty = false) => {
   const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
-  const writable = await fileHandle.createWritable();
-  await writable.write(contents);
-  await writable.close();
+  const writable = await fileHandle.createWritable(onlyIfEmpty ? { mode: 'exclusive' } : undefined);
+  try {
+    if (onlyIfEmpty && (await fileHandle.getFile()).size) {
+      throw new Error('Another writer filled this file. Retry to adopt its saved copy.');
+    }
+    await writable.write(contents);
+    await writable.close();
+  } catch (error) {
+    await writable.abort?.().catch(() => {});
+    throw error;
+  }
 };
 
 const extensionFor = (file) => {
@@ -229,8 +246,9 @@ export const storeDocumentFile = async ({
   area = 'originals',
   file,
   metadata = {},
+  preservePrintable = false,
 }) => {
-  await ensurePermission(rootHandle);
+  await ensurePermission(rootHandle, 'readwrite', !preservePrintable);
   if (!(file instanceof Blob)) throw new Error('A valid document file is required.');
   if (!['customers', 'vendors'].includes(partyType)) throw new Error('Document party type must be customers or vendors.');
   if (!['incoming', 'outgoing'].includes(direction)) throw new Error('Document direction must be incoming or outgoing.');
@@ -256,10 +274,22 @@ export const storeDocumentFile = async ({
     safeArea,
   ];
   const directoryHandle = await walkDirectories(rootHandle, directorySegments, true);
-  await writeFile(directoryHandle, fileName, file);
+  const existingFile = preservePrintable ? await readOptionalFile(directoryHandle, fileName) : null;
+  let storedFile = file;
+  if (existingFile?.size) {
+    // A previous run can finish the HTML before the manifest or database commits.
+    const title = (await existingFile.text()).match(/<title>([\s\S]*?)<\/title>/i)?.[1];
+    const escapedLabel = String(recordLabel).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+    if (![recordLabel, escapedLabel].some(label => title === 'Purchase Order ' + label)) {
+      throw new Error('A different file already occupies the PO document path.');
+    }
+    storedFile = existingFile;
+  } else {
+    await writeFile(directoryHandle, fileName, file, preservePrintable);
+  }
 
   const storedAt = new Date().toISOString();
-  const checksum = await checksumSha256(file);
+  const checksum = await checksumSha256(storedFile);
   const relativePath = [...directorySegments, fileName].join('/');
   const recordDirectorySegments = directorySegments.slice(0, -1);
   const manifest = {
@@ -276,8 +306,8 @@ export const storeDocumentFile = async ({
       originalName: file.name || fileName,
       storedName: fileName,
       mimeType: file.type || 'application/octet-stream',
-      size: file.size,
-      lastModified: file.lastModified || null,
+      size: storedFile.size,
+      lastModified: storedFile.lastModified || null,
       checksumSha256: checksum,
       relativePath,
     },
@@ -285,16 +315,28 @@ export const storeDocumentFile = async ({
     storedAt,
   };
   const recordDirectory = await walkDirectories(rootHandle, recordDirectorySegments, true);
-  await writeFile(
-    recordDirectory,
-    'record.json',
-    new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }),
-  );
+  let manifestName = 'record.json';
+  let existingManifest = preservePrintable ? await readOptionalFile(recordDirectory, manifestName) : null;
+  if (existingManifest?.size) {
+    const prior = JSON.parse(await existingManifest.text());
+    if (prior.file?.relativePath !== relativePath) {
+      manifestName = fileName + '.json';
+      existingManifest = await readOptionalFile(recordDirectory, manifestName);
+    }
+  }
+  if (!existingManifest?.size) {
+    await writeFile(recordDirectory, manifestName, new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }), preservePrintable);
+  } else {
+    const prior = JSON.parse(await existingManifest.text());
+    if (prior.file?.relativePath !== relativePath || String(prior.record?.id) !== String(recordId)) {
+      throw new Error('A different record already occupies the PO manifest path.');
+    }
+  }
 
   return {
     storageVersion: 2,
     relativePath,
-    manifestPath: [...recordDirectorySegments, 'record.json'].join('/'),
+    manifestPath: [...recordDirectorySegments, manifestName].join('/'),
     routing: {
       organization: organizationFolder,
       partyType,
@@ -309,15 +351,15 @@ export const storeDocumentFile = async ({
     originalName: file.name || fileName,
     storedName: fileName,
     mimeType: file.type || 'application/octet-stream',
-    size: file.size,
-    lastModified: file.lastModified || null,
+    size: storedFile.size,
+    lastModified: storedFile.lastModified || null,
     checksumSha256: checksum,
     storedAt,
   };
 };
 
-export const getStoredDocumentFile = async (rootHandle, storageReference) => {
-  await ensurePermission(rootHandle, 'read');
+export const getStoredDocumentFile = async (rootHandle, storageReference, requestIfNeeded = true) => {
+  await ensurePermission(rootHandle, 'read', requestIfNeeded);
   const path = storageReference?.relativePath;
   if (!path) throw new Error('This record does not contain a document-storage path.');
   const segments = path.split('/').filter(Boolean);

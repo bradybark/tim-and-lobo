@@ -25,6 +25,12 @@ const SETTINGS_SECTIONS = [
 
 const APP_RELEASES = [
   {
+    version: '2026.11.20.6',
+    date: 'November 20, 2026',
+    title: 'Automatic printable PO recovery',
+    notes: ['Timothy’s Toolbox files missing printable POs when the shared document folder is available, including individual backorders.'],
+  },
+  {
     version: '2026.11.20.5',
     date: 'November 20, 2026',
     title: 'Vendor SKU descriptions',

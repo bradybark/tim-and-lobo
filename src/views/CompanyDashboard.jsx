@@ -24,6 +24,7 @@ import ExpenseTrackingView from './ExpenseTrackingView';
 import QuotesView from './QuotesView';
 import InvoicesView from './InvoicesView';
 
+import { usePrintablePORetry } from '../hooks/usePrintablePORetry';
 import { useInventory } from '../context/InventoryContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
 import {
@@ -108,7 +109,7 @@ const CompanyDashboard = ({
     internalOrders, setInternalOrders,
     invoices, setInvoices,
     websiteOrders, setWebsiteOrders,
-    documentStorageRootHandle, updateDocumentStorageRootHandle,
+    documentStorageRootHandle, updateDocumentStorageRootHandle, documentFolderStatus,
     myCompany, setMyCompany, companyLogo, handleLogoUpload,
     expenses, setExpenses,
     expenseCategories, setExpenseCategories,
@@ -127,6 +128,7 @@ const CompanyDashboard = ({
   const [verifiedAutoBackup, setVerifiedAutoBackup] = useState(null);
 
   // Reconnect prompt state
+  const [checkedStartupBackup, setCheckedStartupBackup] = useState(false);
   const [pendingReconnectHandle, setPendingReconnectHandle] = useState(null);
   const [pendingReconnectName, setPendingReconnectName] = useState('');
   const [reconnectDismissed, setReconnectDismissed] = useState(false);
@@ -306,6 +308,9 @@ const CompanyDashboard = ({
   useEffect(() => {
     if (!dataLoaded || cloudFileHandle) return;
     let active = true;
+    // Give the initial JSON comparison time to finish before attaching recovered
+    // references. An unreachable JSON file must not block the document folder.
+    const startupTimer = setTimeout(() => setCheckedStartupBackup(true), 5000);
     const checkSavedHandle = async () => {
       try {
         const savedHandle = await get(`${orgKey}_cloudFileHandle`);
@@ -333,10 +338,13 @@ const CompanyDashboard = ({
         }
       } catch (e) {
         console.log('No saved file handle found');
+      } finally {
+        clearTimeout(startupTimer);
+        if (active) setCheckedStartupBackup(true);
       }
     };
     checkSavedHandle();
-    return () => { active = false; };
+    return () => { active = false; clearTimeout(startupTimer); };
   }, [dataLoaded, orgKey, cloudFileHandle]);
 
   const handleReconnect = async () => {
@@ -477,6 +485,11 @@ const CompanyDashboard = ({
   const liveBackup = verifiedLiveBackup?.handle === (cloudFileHandle || pendingReconnectHandle || conflictData?.handle) ? verifiedLiveBackup : null;
   const autoBackup = verifiedAutoBackup?.handle === autoBackupFolderHandle ? verifiedAutoBackup : null;
 
+  const filingPrintables = usePrintablePORetry({
+    enabled: orgKey === 'timothy' && dataLoaded && posSavedInBrowser && !conflictData && (checkedStartupBackup || Boolean(cloudFileHandle)),
+    root: documentStorageRootHandle, folderStatus: documentFolderStatus, pos, updatePOs: setPos, vendors, myCompany, companyLogo,
+  });
+
   if (!dataLoaded) {
     return (
       <div className="p-10 text-center text-gray-500">
@@ -613,6 +626,7 @@ const CompanyDashboard = ({
           {activeTab === 'pos' && has('purchaseOrders') && (
             poComponentType === 'PurchaseOrderSystem'
               ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} setVendors={setVendors} skuImages={skuImages} documentStorageRootHandle={documentStorageRootHandle} orgKey={orgKey} myCompany={myCompany} companyLogo={companyLogo}
+                  filingPrintables={filingPrintables}
                   posSavedInBrowser={posSavedInBrowser}
                   liveBackup={liveBackup}
                   autoBackup={autoBackup}

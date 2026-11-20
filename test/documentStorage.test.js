@@ -184,3 +184,31 @@ test('refuses storage without a valid business date or connected root', async ()
     /connect the document-storage root/i,
   );
 });
+import { ensurePrintablePO, attachFiledPOs } from '../src/utils/filePurchaseOrder.js';
+
+test('recovers a backorder separately, adopts an interrupted write, and keeps existing printables', async () => {
+  const root = new MemoryDirectoryHandle('document-storage');
+  const profile = { vendors: [], myCompany: { name: 'Test' } };
+  const order = { id: 5, poNumber: 'PO-5', orderDate: '2026-11-20', items: [], notes: 'initial' };
+  const original = await ensurePrintablePO(root, order, profile);
+  const adopted = await ensurePrintablePO(root, { ...order, notes: 'later' }, profile);
+  assert.equal(original.relativePath, adopted.relativePath);
+  assert.equal(original.checksumSha256, adopted.checksumSha256);
+  let folder = root;
+  for (const part of original.relativePath.split('/').slice(0,-1)) folder = await folder.getDirectoryHandle(part);
+  assert.match(await (await getStoredDocumentFile(root, adopted)).text(), /initial/);
+  const bo = { ...order, id: 6, poNumber: 'PO-5-BO', generatedPOStorage: original };
+  const child = await ensurePrintablePO(root, bo, profile);
+  assert.notEqual(original.relativePath, child.relativePath);
+  assert.match(await (await getStoredDocumentFile(root, child)).text(), /<title>Purchase Order PO-5-BO<\/title>/);
+  folder.files.delete(original.storedName);
+  assert.equal((await ensurePrintablePO(root, { ...order, generatedPOStorage: original }, profile)).relativePath, original.relativePath);
+  const originalFile = await folder.getFileHandle(original.storedName);
+  originalFile.contents = new Blob(['unrelated']);
+  await assert.rejects(ensurePrintablePO(root, order, profile), /different file/);
+  assert.equal(await (await originalFile.getFile()).text(), 'unrelated');
+  const completed = new Map([[6, { order: bo, reference: child }]]);
+  assert.deepEqual(attachFiledPOs([], completed), []);
+  assert.deepEqual(attachFiledPOs([{ ...bo, poNumber: 'renamed' }], completed), [{ ...bo, poNumber: 'renamed' }]);
+  assert.deepEqual(attachFiledPOs([{ ...bo, notes: 'edited' }], completed), [{ ...bo, notes: 'edited', generatedPOStorage: child }]);
+});
