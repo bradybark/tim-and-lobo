@@ -10,6 +10,8 @@ import { getStoredDocumentFile, storeDocumentFile } from '../utils/documentStora
 import { blobToDataUrl, imageToDataUrl } from '../utils/imageDataUrl';
 import { filterPurchaseOrderList, preparePurchaseOrdersForList } from '../utils/purchaseOrderFilters';
 
+const supportsCatalogPreview = globalThis.CSS?.supports('appearance', 'base-select') && globalThis.CSS.supports('selector(::picker(select))');
+
 // Helper to format currency
 const formatMoney = (amount) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
@@ -1059,7 +1061,8 @@ const PurchaseOrderSystem = ({
                                             <div className="flex flex-col">
                                                 {selectedVendor?.products?.length > 0 ? (
                                                     <select
-                                                        className="text-sm border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white p-1 mb-1"
+                                                        aria-label="Vendor catalog SKU"
+                                                        className="po-catalog-select text-sm border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white p-1 mb-1"
                                                         onChange={(e) => {
                                                             const prod = selectedVendor.products.find(p => p.sku === e.target.value);
                                                             if (prod) handleVendorProductSelect(item.id, prod);
@@ -1067,7 +1070,13 @@ const PurchaseOrderSystem = ({
                                                         value={item.sku}
                                                     >
                                                         <option value="">Select from Catalog...</option>
-                                                        {selectedVendor.products.map(p => <option key={p.sku} value={p.sku}>{p.sku}</option>)}
+                                                        {selectedVendor.products.map(product => (
+                                                            <option key={product.sku} value={product.sku}
+                                                                data-description={product.description || undefined}
+                                                                aria-label={[product.sku, product.description].filter(Boolean).join(' - ')}>
+                                                                {supportsCatalogPreview || !product.description ? product.sku : product.sku + ' - ' + product.description}
+                                                            </option>
+                                                        ))}
                                                     </select>
                                                 ) : null}
                                                 <input

@@ -25,6 +25,12 @@ const SETTINGS_SECTIONS = [
 
 const APP_RELEASES = [
   {
+    version: '2026.11.20.5',
+    date: 'November 20, 2026',
+    title: 'Vendor SKU descriptions',
+    notes: ['Hover over a catalog SKU while entering a Timothy’s PO to see its product description.'],
+  },
+  {
     version: '2026.11.20.4',
     date: 'November 20, 2026',
     title: 'Outgoing order save locations',
