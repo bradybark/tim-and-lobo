@@ -50,6 +50,10 @@ const urlToBase64 = async (url) => {
   }
 };
 
+function backupOrders(handle, data, name = handle.name) {
+  return { handle, name, pos: data.pos, outgoingOrders: data.outgoingOrders };
+}
+
 const CompanyDashboard = ({
   orgKey = 'lobo',
   initialCompanyName,
@@ -220,7 +224,7 @@ const CompanyDashboard = ({
   // Helper to finish linking a cloud file (set handle, status, etc.)
   const finishLink = async (handle, backup) => {
     await set(`${orgKey}_cloudFileHandle`, handle);
-    setVerifiedLiveBackup(backup?.orgKey === orgKey ? { handle, name: handle.name, orders: backup.pos } : null);
+    setVerifiedLiveBackup(backup?.orgKey === orgKey ? backupOrders(handle, backup) : null);
     setCloudFileHandle(handle);
     setCloudStatus(`Linked ${handle.name}`);
     setPendingReconnectHandle(null);
@@ -263,7 +267,7 @@ const CompanyDashboard = ({
       }
 
       // Ambiguous or missing timestamps — show conflict dialog
-      if (!cloudFileHandle && json.orgKey === orgKey) setVerifiedLiveBackup({ handle, name: handle.name, orders: json.pos });
+      if (!cloudFileHandle && json.orgKey === orgKey) setVerifiedLiveBackup(backupOrders(handle, json));
       setConflictData({
         fileData: json,
         handle,
@@ -282,7 +286,7 @@ const CompanyDashboard = ({
     const backup = JSON.parse(await file.text());
     if (!backup || backup.orgKey !== orgKey) throw new Error('The backup belongs to a different organization or has no organization ID.');
     if (!current()) return;
-    setVerifiedLiveBackup({ handle, name: handle.name, orders: backup.pos });
+    setVerifiedLiveBackup(backupOrders(handle, backup));
     const initial = currentImagesRef.current;
     const images = await initial.prepareImagesPayload();
     if (!current()) return;
@@ -325,7 +329,7 @@ const CompanyDashboard = ({
         setPendingReconnectName(savedHandle.name);
         if (await savedHandle.queryPermission?.({ mode: 'read' }) === 'granted') {
           const backup = JSON.parse(await (await savedHandle.getFile()).text());
-          if (active && backup?.orgKey === orgKey) setVerifiedLiveBackup({ handle: savedHandle, name: savedHandle.name, orders: backup.pos });
+          if (active && backup?.orgKey === orgKey) setVerifiedLiveBackup(backupOrders(savedHandle, backup));
         }
       } catch (e) {
         console.log('No saved file handle found');
@@ -375,7 +379,7 @@ const CompanyDashboard = ({
         const backup = JSON.parse(await (await handle.getFile()).text());
         if (active && backup?.orgKey === orgKey) {
           setVerifiedAutoBackup(previous => previous?.handle === autoBackupFolderHandle ? previous :
-            { handle: autoBackupFolderHandle, name: handle.name, orders: backup.pos });
+            backupOrders(autoBackupFolderHandle, backup, handle.name));
         }
       } catch { /* There may be no readable backup in this folder yet. */ }
     }
@@ -416,7 +420,7 @@ const CompanyDashboard = ({
               const writable = await fileHandle.createWritable();
               await writable.write(json);
               await writable.close();
-              setVerifiedAutoBackup({ handle: autoBackupFolderHandle, name: fileHandle.name, orders: data.pos });
+              setVerifiedAutoBackup(backupOrders(autoBackupFolderHandle, data, fileHandle.name));
               setLastAutoBackupTime(new Date().toLocaleTimeString());
               return;
             }
@@ -459,7 +463,7 @@ const CompanyDashboard = ({
         await writable.write(JSON.stringify(fullPayload, null, 2));
         await writable.close();
         if (active) {
-          setVerifiedLiveBackup({ handle: cloudFileHandle, name: cloudFileHandle.name, orders: data.pos });
+          setVerifiedLiveBackup(backupOrders(cloudFileHandle, data));
           setCloudStatus(`Synced ${new Date().toLocaleTimeString()}`);
         }
       } catch (err) { if (active) setCloudStatus('Sync paused'); }
@@ -469,6 +473,9 @@ const CompanyDashboard = ({
   }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, quotes, skuImages, myCompany, companyLogo, dataLoaded]);
 
 
+
+  const liveBackup = verifiedLiveBackup?.handle === (cloudFileHandle || pendingReconnectHandle || conflictData?.handle) ? verifiedLiveBackup : null;
+  const autoBackup = verifiedAutoBackup?.handle === autoBackupFolderHandle ? verifiedAutoBackup : null;
 
   if (!dataLoaded) {
     return (
@@ -607,15 +614,15 @@ const CompanyDashboard = ({
             poComponentType === 'PurchaseOrderSystem'
               ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} setVendors={setVendors} skuImages={skuImages} documentStorageRootHandle={documentStorageRootHandle} orgKey={orgKey} myCompany={myCompany} companyLogo={companyLogo}
                   posSavedInBrowser={posSavedInBrowser}
-                  liveBackup={verifiedLiveBackup?.handle === (cloudFileHandle || pendingReconnectHandle || conflictData?.handle) ? verifiedLiveBackup : null}
-                  autoBackup={verifiedAutoBackup?.handle === autoBackupFolderHandle ? verifiedAutoBackup : null}
+                  liveBackup={liveBackup}
+                  autoBackup={autoBackup}
                   onOpenVendors={() => { setParentTab('inventory'); setActiveTab('vendors'); }} />
               : <POView pos={pos} handleAddPO={handleAddPO} toggleReceivePO={toggleReceivePO} updateReceivedDate={updateReceivedDate} deletePO={deletePO} skuImages={skuImages} vendors={vendors} updatePOVendor={updatePOVendor} addVendor={addVendor} cogs={cogs} setCogs={setCogs} snapshots={snapshots} setSnapshots={setSnapshots} cogsHistory={cogsHistory} setCogsHistory={setCogsHistory} shipments={shipments} setShipments={setShipments} updatePOs={setPos} />
           )}
           {parentTab === 'inventory' && activeTab === 'vendors' && <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />}
           {parentTab === 'inventory' && activeTab === 'reports' && has('reports') && <ReportsView leadTimeStats={leadTimeStats} onExportLeadTimeReport={handleExportLeadTimeAction} snapshots={snapshots} pos={pos} />}
 
-          {parentTab === 'outgoing' && activeTab === 'outgoing' && has('outgoingOrders') && <OutgoingOrdersView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} customers={customers} cogs={cogs} settings={settings} companyLogo={companyLogo} documentStorageRootHandle={documentStorageRootHandle} orgKey={orgKey} />}
+          {parentTab === 'outgoing' && activeTab === 'outgoing' && has('outgoingOrders') && <OutgoingOrdersView liveBackup={liveBackup} autoBackup={autoBackup} outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} customers={customers} cogs={cogs} settings={settings} companyLogo={companyLogo} documentStorageRootHandle={documentStorageRootHandle} orgKey={orgKey} />}
           {parentTab === 'outgoing' && activeTab === 'internal' && has('internalOrders') && <InternalOrdersView internalOrders={internalOrders} setInternalOrders={setInternalOrders} invoices={invoices} setInvoices={setInvoices} customers={customers} cogs={cogs} settings={settings} />}
           {parentTab === 'outgoing' && activeTab === 'website' && has('websiteOrders') && <WebsiteOrdersView websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} cogs={cogs} websitePrices={websitePrices} settings={settings} />}
           {parentTab === 'outgoing' && activeTab === 'outgoing-reports' && hasOutgoingSection && <OutgoingReportsView outgoingOrders={outgoingOrders} setOutgoingOrders={setOutgoingOrders} internalOrders={internalOrders} websiteOrders={websiteOrders} setWebsiteOrders={setWebsiteOrders} customers={customers} settings={settings} />}

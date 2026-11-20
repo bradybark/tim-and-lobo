@@ -25,6 +25,12 @@ const SETTINGS_SECTIONS = [
 
 const APP_RELEASES = [
   {
+    version: '2026.11.20.4',
+    date: 'November 20, 2026',
+    title: 'Outgoing order save locations',
+    notes: ['Lobo outgoing orders show where each order is saved and which customer PO and invoice files have been filed.'],
+  },
+  {
     version: '2026.11.20.3',
     date: 'November 20, 2026',
     title: 'Purchase order save locations',

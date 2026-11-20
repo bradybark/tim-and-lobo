@@ -1,18 +1,34 @@
-// Compare the original PO records, before the list adds sorting and display fields.
-export function matchingPOBackups(orders, backups) {
+// Compare stored order records before views add sorting and display fields.
+export function matchingOrderBackups(orders, backups, collection) {
   const matches = new Map();
   for (const backup of backups) {
-    if (!Array.isArray(backup?.orders)) continue;
-    const savedById = new Map(backup.orders.map(order => [order.id, order]));
-    for (const order of orders) {
-      const saved = savedById.get(order.id);
-      if (!saved || (saved !== order && JSON.stringify(saved) !== JSON.stringify(order))) continue;
+    if (!Array.isArray(backup?.[collection])) continue;
+    for (const order of matchingOrders(orders, backup[collection])) {
       const names = matches.get(order.id) || [];
       if (!names.includes(backup.name)) names.push(backup.name);
       matches.set(order.id, names);
     }
   }
   return matches;
+}
+
+export function matchingOrders(orders, savedOrders) {
+  const byId = new Map(savedOrders.map(order => [order.id, order]));
+  return orders.filter(order => {
+    const saved = byId.get(order.id);
+    return saved && (saved === order || JSON.stringify(saved) === JSON.stringify(order));
+  });
+}
+
+export function outgoingDocumentPath(order, kind) {
+  const invoice = kind === 'invoice';
+  const file = invoice ? order.fileInvoiceStorage : order.filePOStorage;
+  const number = invoice ? order.invoiceNumber : order.poNumber;
+  const routing = file?.routing;
+  if (!file?.relativePath || !number || routing?.recordId == null) return null;
+  if (String(routing.recordId) !== String(order.id) || String(routing.recordLabel) !== String(number)) return null;
+  if (routing.documentType !== (invoice ? 'invoices' : 'purchase-orders')) return null;
+  return file.relativePath;
 }
 
 export function printablePOPath(order) {

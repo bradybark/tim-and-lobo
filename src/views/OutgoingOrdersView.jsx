@@ -3,6 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { Plus, Eye, Trash2, Paperclip, Printer, Search, FileText, Receipt } from 'lucide-react';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
+import { OrderLocationKey, OrderLocations } from '../components/PurchaseOrderLocations';
+import { matchingOrderBackups, matchingOrders, outgoingDocumentPath } from '../utils/purchaseOrderLocations';
 import { FileUploader } from '../components/FileUploader';
 import { toast } from 'sonner';
 import { useInventory } from '../context/InventoryContext';
@@ -666,6 +668,13 @@ const OutgoingOrdersView = (props) => {
   const documentStorageRootHandle = props.documentStorageRootHandle || context.documentStorageRootHandle;
   const orgKey = props.orgKey || context.orgKey;
 
+  const { liveBackup, autoBackup } = props;
+  const browserIds = useMemo(() => new Set(
+    matchingOrders(outgoingOrders, context.savedOutgoingOrders || EMPTY_ARRAY).map(order => order.id),
+  ), [outgoingOrders, context.savedOutgoingOrders]);
+  const backupsById = useMemo(() => matchingOrderBackups(outgoingOrders, [liveBackup, autoBackup], 'outgoingOrders'),
+    [outgoingOrders, liveBackup, autoBackup]);
+
   const allSkus = (settings || []).map(s => s.sku); // FIX: Derive SKUs from settings
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -908,11 +917,14 @@ const OutgoingOrdersView = (props) => {
             </div>
           </div>
 
+          <div className="px-2 py-1.5"><OrderLocationKey outgoing /></div>
+
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
             <thead className="bg-gray-50 dark:bg-gray-700/50 text-xs uppercase font-medium">
               <tr>
+                <th scope="col" className="w-px px-2 py-2 text-left">Saved</th>
                 <SortableHeaderCell label="Date" sortKey="date" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.date} />
                 <SortableHeaderCell label="PO Number" sortKey="poNumber" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.poNumber} />
                 <SortableHeaderCell label="Invoice #" sortKey="invoiceNumber" currentSort={sortConfig} onSort={handleSort} onFilter={tableFilter} filterValue={filters.invoiceNumber} />
@@ -927,7 +939,7 @@ const OutgoingOrdersView = (props) => {
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {/* FIX: Check if processedData exists */}
               {(!processedData || processedData.length === 0) ? (
-                <tr><td colSpan="9" className="p-8 text-center text-gray-500">No orders found.</td></tr>
+                <tr><td colSpan="10" className="p-8 text-center text-gray-500">No orders found.</td></tr>
               ) : processedData.map(order => {
                 const cust = customers.find(c => String(c.id) === String(order.customerId));
                 const total = (order.items || []).reduce((sum, i) => sum + (getInvoiceQuantity(i) * i.price), 0) + (order.adjustment || 0);
@@ -936,6 +948,8 @@ const OutgoingOrdersView = (props) => {
                 const orderMargin = total > 0 ? (orderProfit / total) * 100 : 0;
                 return (
                   <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <OrderLocations outgoing browser={browserIds.has(order.id)} backups={backupsById.get(order.id)}
+                      file={outgoingDocumentPath(order, 'po')} invoice={outgoingDocumentPath(order, 'invoice')} />
                     <td className="px-6 py-4">{order.date}</td>
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{order.poNumber}</td>
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">{order.invoiceNumber || '-'}</td>

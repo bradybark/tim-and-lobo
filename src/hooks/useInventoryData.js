@@ -75,6 +75,7 @@ export function useInventoryData(orgKey) {
   const [websitePrices, setWebsitePrices] = useState({});
   const [skuDescriptions, setSkuDescriptions] = useState({});
   const [outgoingOrders, setOutgoingOrders] = useState([]);
+  const [savedOutgoingOrders, setSavedOutgoingOrders] = useState([]);
   const outgoingOrdersRef = useRef([]);
   const [internalOrders, setInternalOrders] = useState([]);
   const [invoices, setInvoices] = useState([]);
@@ -146,7 +147,7 @@ export function useInventoryData(orgKey) {
           load(`${orgKey}_cogs`, seeds.cogs),
           load(`${orgKey}_websitePrices`, seeds.websitePrices),
           load(`${orgKey}_skuDescriptions`, {}),
-          load(`${orgKey}_outgoing`, seeds.outgoing),
+          get(`${orgKey}_outgoing`),
           load(`${orgKey}_internal`, seeds.internal),
           load(`${orgKey}_invoices`, seeds.invoices),
           load(`${orgKey}_websiteOrders`, seeds.websiteOrders),
@@ -188,7 +189,8 @@ export function useInventoryData(orgKey) {
         setCogs(savedCogs || {});
         setWebsitePrices(savedWebsitePrices || {});
         setSkuDescriptions(savedSkuDescriptions || {});
-        setOutgoingOrders(savedOutgoing || []);
+        setSavedOutgoingOrders(savedOutgoing || []);
+        setOutgoingOrders((savedOutgoing === undefined ? seeds.outgoing : savedOutgoing) || []);
         setInternalOrders(savedInternal || []);
         setInvoices(savedInvoices || []);
         setWebsiteOrders(savedWebsiteOrders || []);
@@ -310,6 +312,7 @@ export function useInventoryData(orgKey) {
       const now = new Date().toISOString();
       try {
         await setMany([...changes, [`${orgKey}_lastModifiedAt`, now]]);
+        if (changes.some(([key]) => key === `${orgKey}_outgoing`)) setSavedOutgoingOrders(values.outgoing);
         lastInventory.current = values;
         setLastModifiedAt(now);
       } catch (error) {
@@ -444,6 +447,7 @@ export function useInventoryData(orgKey) {
     outgoingOrdersRef.current = updatedOrders;
     setOutgoingOrders(updatedOrders);
     await set(`${orgKey}_outgoing`, updatedOrders);
+    setSavedOutgoingOrders(updatedOrders);
   }, [orgKey]);
 
   const deleteOutgoingOrder = useCallback((id) => {
@@ -464,7 +468,7 @@ export function useInventoryData(orgKey) {
     cogs, setCogs,
     websitePrices, setWebsitePrices,
     skuDescriptions, setSkuDescriptions,
-    outgoingOrders, setOutgoingOrders,
+    outgoingOrders, setOutgoingOrders, savedOutgoingOrders,
     internalOrders, setInternalOrders,
     invoices, setInvoices,
     websiteOrders, setWebsiteOrders,

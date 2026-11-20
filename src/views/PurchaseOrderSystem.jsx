@@ -4,8 +4,8 @@ import { toast } from 'sonner';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { VendorCell } from '../components/VendorCell';
-import { PurchaseOrderLocationKey, PurchaseOrderLocations } from '../components/PurchaseOrderLocations';
-import { matchingPOBackups, printablePOPath } from '../utils/purchaseOrderLocations';
+import { OrderLocationKey, OrderLocations } from '../components/PurchaseOrderLocations';
+import { matchingOrderBackups, printablePOPath } from '../utils/purchaseOrderLocations';
 import { getStoredDocumentFile, storeDocumentFile } from '../utils/documentStorage';
 import { blobToDataUrl, imageToDataUrl } from '../utils/imageDataUrl';
 import { filterPurchaseOrderList, preparePurchaseOrdersForList } from '../utils/purchaseOrderFilters';
@@ -118,7 +118,7 @@ const PurchaseOrderSystem = ({
 
     // Filter out legacy POs
     const validPOs = useMemo(() => pos.filter(p => p.items && Array.isArray(p.items)), [pos]);
-    const backupsByPO = useMemo(() => matchingPOBackups(validPOs, [liveBackup, autoBackup]), [validPOs, liveBackup, autoBackup]);
+    const backupsByPO = useMemo(() => matchingOrderBackups(validPOs, [liveBackup, autoBackup], 'pos'), [validPOs, liveBackup, autoBackup]);
 
     // --- Report Computed Data ---
     const filteredPOs = useMemo(() => {
@@ -1265,7 +1265,7 @@ const PurchaseOrderSystem = ({
                 )}
 
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <PurchaseOrderLocationKey />
+                    <OrderLocationKey />
                     <span>Showing {processedData.length} of {validPOs.length} purchase orders</span>
                     {activeListFilterLabels.length > 0 && (
                         <div className="flex flex-wrap justify-end gap-1.5" aria-label="Active filters">
@@ -1299,7 +1299,7 @@ const PurchaseOrderSystem = ({
 
                                 return (
                                     <tr key={po.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                        <PurchaseOrderLocations browser={posSavedInBrowser} backups={backupsByPO.get(po.id)} file={printablePOPath(po)} />
+                                        <OrderLocations browser={posSavedInBrowser} backups={backupsByPO.get(po.id)} file={printablePOPath(po)} />
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600 dark:text-indigo-400">
                                             {po.poNumber}
                                         </td>
