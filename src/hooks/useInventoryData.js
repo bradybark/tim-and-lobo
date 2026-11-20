@@ -65,6 +65,7 @@ export function useInventoryData(orgKey) {
 
   const [snapshots, setSnapshots] = useState([]);
   const [pos, setPos] = useState([]);
+  const [posSavedInBrowser, setPosSavedInBrowser] = useState(false);
   const initialPOs = useRef([]);
   const [settings, setSettings] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -137,7 +138,7 @@ export function useInventoryData(orgKey) {
           savedExpenses, savedExpenseCategories, savedCogsHistory, savedShipments, savedQuotes, savedLastModifiedAt
         ] = await Promise.all([
           load(`${orgKey}_snapshots`, seeds.snapshots),
-          load(`${orgKey}_pos`, seeds.pos),
+          get(`${orgKey}_pos`),
           load(`${orgKey}_settings`, seeds.settings),
           load(`${orgKey}_vendors`, seeds.vendors),
           get(`${orgKey}_images`),
@@ -178,7 +179,8 @@ export function useInventoryData(orgKey) {
         }
 
         setSnapshots(savedSnaps || []);
-        initialPOs.current = savedPos || [];
+        initialPOs.current = savedPos === undefined ? (seeds.pos || []) : (savedPos || []);
+        setPosSavedInBrowser(Array.isArray(savedPos));
         setPos(initialPOs.current);
         setSettings(savedSettings || []);
         setVendors(savedVendors || []);
@@ -333,6 +335,7 @@ export function useInventoryData(orgKey) {
       store.put(now, `${orgKey}_lastModifiedAt`);
       await promisifyRequest(store.transaction);
       setPos(next);
+      setPosSavedInBrowser(true);
       setLastModifiedAt(now);
     });
     committed.catch(() => toast.error('Chrome could not save the purchase order changes.'));
@@ -452,7 +455,7 @@ export function useInventoryData(orgKey) {
     dataLoaded,
     dataLoadError,
     snapshots, setSnapshots,
-    pos, setPos: immediatePOWrites ? updatePurchaseOrders : setPos,
+    pos, posSavedInBrowser, setPos: immediatePOWrites ? updatePurchaseOrders : setPos,
     settings, setSettings,
     vendors, setVendors,
     skuImages, setSkuImages,

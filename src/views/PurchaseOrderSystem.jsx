@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { useTable } from '../hooks/useTable';
 import { SortableHeaderCell } from '../components/SortableHeaderCell';
 import { VendorCell } from '../components/VendorCell';
+import { PurchaseOrderLocationKey, PurchaseOrderLocations } from '../components/PurchaseOrderLocations';
+import { matchingPOBackups, printablePOPath } from '../utils/purchaseOrderLocations';
 import { getStoredDocumentFile, storeDocumentFile } from '../utils/documentStorage';
 import { blobToDataUrl, imageToDataUrl } from '../utils/imageDataUrl';
 import { filterPurchaseOrderList, preparePurchaseOrdersForList } from '../utils/purchaseOrderFilters';
@@ -47,6 +49,7 @@ const DEFAULT_LIST_FILTERS = {
 const PurchaseOrderSystem = ({
     pos, // List of PO documents
     updatePOs, // Function to update PO list
+    posSavedInBrowser, liveBackup, autoBackup,
     vendors,
     setVendors,
     skuImages,
@@ -115,6 +118,7 @@ const PurchaseOrderSystem = ({
 
     // Filter out legacy POs
     const validPOs = useMemo(() => pos.filter(p => p.items && Array.isArray(p.items)), [pos]);
+    const backupsByPO = useMemo(() => matchingPOBackups(validPOs, [liveBackup, autoBackup]), [validPOs, liveBackup, autoBackup]);
 
     // --- Report Computed Data ---
     const filteredPOs = useMemo(() => {
@@ -1261,6 +1265,7 @@ const PurchaseOrderSystem = ({
                 )}
 
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <PurchaseOrderLocationKey />
                     <span>Showing {processedData.length} of {validPOs.length} purchase orders</span>
                     {activeListFilterLabels.length > 0 && (
                         <div className="flex flex-wrap justify-end gap-1.5" aria-label="Active filters">
@@ -1277,6 +1282,7 @@ const PurchaseOrderSystem = ({
                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead className="bg-gray-50 dark:bg-gray-700">
                             <tr>
+                                <th scope="col" title="Confirmed save locations" className="w-px px-2 py-3 text-left align-top text-[10px] font-medium uppercase text-gray-500 dark:text-gray-300">Saved</th>
                                 <SortableHeaderCell label="PO #" sortKey="poNumber" currentSort={sortConfig} onSort={handleSort} filterable={false} />
                                 <SortableHeaderCell label="Vendor" sortKey="vendorName" currentSort={sortConfig} onSort={handleSort} filterable={false} />
                                 <SortableHeaderCell label="Order Date" sortKey="orderDate" currentSort={sortConfig} onSort={handleSort} filterable={false} />
@@ -1293,6 +1299,7 @@ const PurchaseOrderSystem = ({
 
                                 return (
                                     <tr key={po.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                        <PurchaseOrderLocations browser={posSavedInBrowser} backups={backupsByPO.get(po.id)} file={printablePOPath(po)} />
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600 dark:text-indigo-400">
                                             {po.poNumber}
                                         </td>
@@ -1389,7 +1396,7 @@ const PurchaseOrderSystem = ({
                             })}
                             {processedData.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="px-6 py-12 text-center">
+                                    <td colSpan={8} className="px-6 py-12 text-center">
                                         <p className="text-sm font-medium text-gray-700 dark:text-gray-200">No purchase orders match these filters.</p>
                                         <button type="button" onClick={resetListFilters} className="mt-2 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400">Clear filters</button>
                                     </td>

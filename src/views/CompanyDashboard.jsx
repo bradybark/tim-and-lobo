@@ -91,7 +91,7 @@ const CompanyDashboard = ({
   const {
     dataLoaded, dataLoadError,
     snapshots, setSnapshots,
-    pos, setPos,
+    pos, setPos, posSavedInBrowser,
     settings, setSettings,
     vendors, setVendors,
     skuImages, setSkuImages,
@@ -118,7 +118,9 @@ const CompanyDashboard = ({
   const [rateParams, setRateParams] = useState({ timeframe: 'last-period', customStart: '', customEnd: '' });
   const [cloudFileHandle, setCloudFileHandle] = useState(null);
   const [cloudStatus, setCloudStatus] = useState('');
-  const isSyncing = useRef(false);
+  const syncQueue = useRef(Promise.resolve());
+  const [verifiedLiveBackup, setVerifiedLiveBackup] = useState(null);
+  const [verifiedAutoBackup, setVerifiedAutoBackup] = useState(null);
 
   // Reconnect prompt state
   const [pendingReconnectHandle, setPendingReconnectHandle] = useState(null);
@@ -216,8 +218,9 @@ const CompanyDashboard = ({
   const handleExportAllAction = () => exportFullWorkbook({ plannerData, snapshots, pos }, 'full.xlsx');
   const handleExportLeadTimeAction = () => exportLeadTimeReport({ pos, settings }, 'leadtime.xlsx');
   // Helper to finish linking a cloud file (set handle, status, etc.)
-  const finishLink = async (handle) => {
+  const finishLink = async (handle, backup) => {
     await set(`${orgKey}_cloudFileHandle`, handle);
+    setVerifiedLiveBackup(backup?.orgKey === orgKey ? { handle, name: handle.name, orders: backup.pos } : null);
     setCloudFileHandle(handle);
     setCloudStatus(`Linked ${handle.name}`);
     setPendingReconnectHandle(null);
@@ -249,17 +252,18 @@ const CompanyDashboard = ({
         if (diff > FIVE_MIN) {
           // File is clearly newer — import from file
           await handleImportBackup(json);
-          await finishLink(handle);
+          await finishLink(handle, json);
           return;
         } else if (diff < -FIVE_MIN) {
           // Browser is clearly newer — keep browser data, write to file
-          await finishLink(handle);
+          await finishLink(handle, json);
           toast.success('Linked — your newer browser data will sync to file');
           return;
         }
       }
 
       // Ambiguous or missing timestamps — show conflict dialog
+      if (!cloudFileHandle && json.orgKey === orgKey) setVerifiedLiveBackup({ handle, name: handle.name, orders: json.pos });
       setConflictData({
         fileData: json,
         handle,
@@ -277,6 +281,8 @@ const CompanyDashboard = ({
     const file = await handle.getFile();
     const backup = JSON.parse(await file.text());
     if (!backup || backup.orgKey !== orgKey) throw new Error('The backup belongs to a different organization or has no organization ID.');
+    if (!current()) return;
+    setVerifiedLiveBackup({ handle, name: handle.name, orders: backup.pos });
     const initial = currentImagesRef.current;
     const images = await initial.prepareImagesPayload();
     if (!current()) return;
@@ -317,6 +323,10 @@ const CompanyDashboard = ({
         if (!active) return;
         setPendingReconnectHandle(savedHandle);
         setPendingReconnectName(savedHandle.name);
+        if (await savedHandle.queryPermission?.({ mode: 'read' }) === 'granted') {
+          const backup = JSON.parse(await (await savedHandle.getFile()).text());
+          if (active && backup?.orgKey === orgKey) setVerifiedLiveBackup({ handle: savedHandle, name: savedHandle.name, orders: backup.pos });
+        }
       } catch (e) {
         console.log('No saved file handle found');
       }
@@ -355,6 +365,24 @@ const CompanyDashboard = ({
     loadPref();
   }, [dataLoaded, orgKey]);
 
+  useEffect(() => {
+    if (!autoBackupFolderHandle) return;
+    let active = true;
+    async function checkAutoBackup() {
+      try {
+        if (await autoBackupFolderHandle.queryPermission({ mode: 'read' }) !== 'granted') return;
+        const handle = await autoBackupFolderHandle.getFileHandle(`${orgKey}_autobackup.json`);
+        const backup = JSON.parse(await (await handle.getFile()).text());
+        if (active && backup?.orgKey === orgKey) {
+          setVerifiedAutoBackup(previous => previous?.handle === autoBackupFolderHandle ? previous :
+            { handle: autoBackupFolderHandle, name: handle.name, orders: backup.pos });
+        }
+      } catch { /* There may be no readable backup in this folder yet. */ }
+    }
+    checkAutoBackup();
+    return () => { active = false; };
+  }, [autoBackupFolderHandle, orgKey]);
+
   const handleToggleAutoBackup = useCallback(async (enabled) => {
     setAutoBackupEnabled(enabled);
     await set(`${orgKey}_autoBackupEnabled`, enabled);
@@ -388,6 +416,7 @@ const CompanyDashboard = ({
               const writable = await fileHandle.createWritable();
               await writable.write(json);
               await writable.close();
+              setVerifiedAutoBackup({ handle: autoBackupFolderHandle, name: fileHandle.name, orders: data.pos });
               setLastAutoBackupTime(new Date().toLocaleTimeString());
               return;
             }
@@ -417,23 +446,26 @@ const CompanyDashboard = ({
 
   useEffect(() => {
     if (!cloudFileHandle || !dataLoaded) return;
+    let active = true;
     const syncData = async () => {
-      if (isSyncing.current) return;
-      isSyncing.current = true;
+      if (!active) return;
       setCloudStatus('Syncing...');
       try {
         const data = prepareDataPayload();
         const images = await prepareImagesPayload();
+        if (!active) return;
         const fullPayload = { ...data, skuImages: images.skuImages, companyLogo: images.companyLogo };
         const writable = await cloudFileHandle.createWritable();
         await writable.write(JSON.stringify(fullPayload, null, 2));
         await writable.close();
-        setCloudStatus(`Synced ${new Date().toLocaleTimeString()}`);
-      } catch (err) { setCloudStatus('Sync paused'); }
-      finally { isSyncing.current = false; }
+        if (active) {
+          setVerifiedLiveBackup({ handle: cloudFileHandle, name: cloudFileHandle.name, orders: data.pos });
+          setCloudStatus(`Synced ${new Date().toLocaleTimeString()}`);
+        }
+      } catch (err) { if (active) setCloudStatus('Sync paused'); }
     };
-    const timer = setTimeout(syncData, 2000);
-    return () => clearTimeout(timer);
+    const timer = setTimeout(() => { syncQueue.current = syncQueue.current.then(syncData); }, 2000);
+    return () => { active = false; clearTimeout(timer); };
   }, [cloudFileHandle, snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions, outgoingOrders, internalOrders, invoices, websiteOrders, expenses, expenseCategories, cogsHistory, shipments, quotes, skuImages, myCompany, companyLogo, dataLoaded]);
 
 
@@ -514,7 +546,7 @@ const CompanyDashboard = ({
         </header>
 
         {(hasOutgoingSection || hasQuotesSection) && (
-          <div className="flex p-1 space-x-1 bg-gray-200 dark:bg-gray-800 rounded-xl w-fit">
+          <div className="flex p-1 space-x-1 bg-gray-200 dark:bg-gray-800 rounded-xl w-fit max-w-full overflow-x-auto">
             <button onClick={() => { setParentTab('inventory'); setActiveTab(has('inventoryLog') ? 'inventory' : 'pos'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'inventory' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Inventory</button>
             {hasOutgoingSection && (
               <button onClick={() => { setParentTab('outgoing'); setActiveTab(has('outgoingOrders') ? 'outgoing' : 'internal'); }} className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${parentTab === 'outgoing' ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>Outgoing Orders</button>
@@ -573,7 +605,11 @@ const CompanyDashboard = ({
           {parentTab === 'inventory' && activeTab === 'inventory' && has('inventoryLog') && <InventoryLogView snapshots={snapshots} pos={pos} skuImages={skuImages} handleAddSnapshot={handleAddSnapshot} deleteSnapshot={deleteSnapshot} cogs={cogs} />}
           {activeTab === 'pos' && has('purchaseOrders') && (
             poComponentType === 'PurchaseOrderSystem'
-              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} setVendors={setVendors} skuImages={skuImages} documentStorageRootHandle={documentStorageRootHandle} orgKey={orgKey} myCompany={myCompany} companyLogo={companyLogo} onOpenVendors={() => { setParentTab('inventory'); setActiveTab('vendors'); }} />
+              ? <PurchaseOrderSystem pos={pos} updatePOs={setPos} vendors={vendors} setVendors={setVendors} skuImages={skuImages} documentStorageRootHandle={documentStorageRootHandle} orgKey={orgKey} myCompany={myCompany} companyLogo={companyLogo}
+                  posSavedInBrowser={posSavedInBrowser}
+                  liveBackup={verifiedLiveBackup?.handle === (cloudFileHandle || pendingReconnectHandle || conflictData?.handle) ? verifiedLiveBackup : null}
+                  autoBackup={verifiedAutoBackup?.handle === autoBackupFolderHandle ? verifiedAutoBackup : null}
+                  onOpenVendors={() => { setParentTab('inventory'); setActiveTab('vendors'); }} />
               : <POView pos={pos} handleAddPO={handleAddPO} toggleReceivePO={toggleReceivePO} updateReceivedDate={updateReceivedDate} deletePO={deletePO} skuImages={skuImages} vendors={vendors} updatePOVendor={updatePOVendor} addVendor={addVendor} cogs={cogs} setCogs={setCogs} snapshots={snapshots} setSnapshots={setSnapshots} cogsHistory={cogsHistory} setCogsHistory={setCogsHistory} shipments={shipments} setShipments={setShipments} updatePOs={setPos} />
           )}
           {parentTab === 'inventory' && activeTab === 'vendors' && <VendorManagerView vendors={vendors} updateVendors={setVendors} onBack={() => setActiveTab('settings')} />}
@@ -649,7 +685,7 @@ const CompanyDashboard = ({
             <div className="flex gap-3 pt-2">
               <button
                 onClick={async () => {
-                  await finishLink(conflictData.handle);
+                  await finishLink(conflictData.handle, conflictData.fileData);
                   setConflictData(null);
                   toast.success('Linked — your browser data will sync to file');
                 }}
@@ -660,7 +696,7 @@ const CompanyDashboard = ({
               <button
                 onClick={async () => {
                   await handleImportBackup(conflictData.fileData, { forceOverwrite: true });
-                  await finishLink(conflictData.handle);
+                  await finishLink(conflictData.handle, conflictData.fileData);
                   setConflictData(null);
                 }}
                 className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-sm font-semibold text-gray-700 dark:text-gray-200 transition-colors"

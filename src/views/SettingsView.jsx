@@ -25,6 +25,12 @@ const SETTINGS_SECTIONS = [
 
 const APP_RELEASES = [
   {
+    version: '2026.11.20.3',
+    date: 'November 20, 2026',
+    title: 'Purchase order save locations',
+    notes: ['Timothy’s purchase order list shows compact icons for browser storage, verified JSON backups, and filed PO documents.'],
+  },
+  {
     version: '2026.11.20.2',
     date: 'November 20, 2026',
     title: 'Shared folder reconnect',
