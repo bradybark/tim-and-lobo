@@ -200,7 +200,10 @@ export const readCompanyProfile = async ({ rootHandle, orgKey }) => {
     if (payload.logo?.storedName) {
       try {
         const logoHandle = await directory.getFileHandle(payload.logo.storedName);
-        logo = await logoHandle.getFile();
+        const file = await logoHandle.getFile();
+        // A OneDrive-backed File can block an IndexedDB write while Chrome
+        // resolves the external file. Keep the cached logo self-contained.
+        logo = new File([await file.arrayBuffer()], file.name, { type: file.type, lastModified: file.lastModified });
       } catch (logoError) {
         if (logoError?.name !== 'NotFoundError') throw logoError;
       }

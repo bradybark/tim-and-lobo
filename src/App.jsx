@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Briefcase, Sun, Moon, Package } from 'lucide-react';
 import { Toaster } from 'sonner';
-import { get, set } from 'idb-keyval';
+import { get } from 'idb-keyval';
 import CompanyDashboard from './views/CompanyDashboard';
 import { getOrganizationConfig } from './utils/orgConfig';
 import {
@@ -99,7 +99,8 @@ function App() {
           console.log(`Could not load logo for ${org.id}`);
         }
       }
-      if (!cancelled) setOrgLogos(logos);
+      if (cancelled) return;
+      setOrgLogos(logos);
 
       try {
         const rootHandle = await get('documentStorageRootHandle');
@@ -109,9 +110,9 @@ function App() {
         for (const org of organizations) {
           try {
             const permanentProfile = await readCompanyProfile({ rootHandle, orgKey: org.id });
+            if (cancelled) return;
             if (permanentProfile?.logo) {
               permanentLogos[org.id] = permanentProfile.logo;
-              await set(`${org.id}_logo`, permanentProfile.logo);
             }
           } catch (error) {
             console.warn(`Could not load permanent logo for ${org.id}`, error);
@@ -152,7 +153,7 @@ function App() {
   // --- DASHBOARD SCREEN ---
   if (selectedOrg) {
     return (
-      <InventoryProvider orgKey={selectedOrg.id}>
+      <InventoryProvider key={selectedOrg.id} orgKey={selectedOrg.id}>
         <Toaster position="top-center" richColors />
         <PWAInstallPrompt />
         <CompanyDashboard

@@ -500,6 +500,7 @@ const SettingsView = ({
                   ? 'text-amber-600 dark:text-amber-400'
                   : 'text-gray-500 dark:text-gray-400'
               }`}>
+              {companyProfileStorageStatus === 'checking' && 'Checking the shared company profile…'}
               {companyProfileStorageStatus === 'saved' && 'Saved permanently to document-storage.'}
               {companyProfileStorageStatus === 'saving' && 'Saving company profile to document-storage…'}
               {companyProfileStorageStatus === 'reconnect-required' && 'Reconnect document-storage in Sync & Backup to restore permanent saving.'}

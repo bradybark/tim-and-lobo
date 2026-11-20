@@ -1,6 +1,6 @@
 // src/hooks/useInventoryData.js
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { get, set } from 'idb-keyval';
+import { get, set, setMany } from 'idb-keyval';
 import {
   COMPANY_LOGO_CHANGED_EVENT,
   readCompanyProfile,
@@ -83,7 +83,15 @@ export function useInventoryData(orgKey) {
   const [documentStorageRootHandle, setDocumentStorageRootHandle] = useState(null);
   const [documentStorageLocationLabel, setDocumentStorageLocationLabel] = useState('');
   const [companyProfileStorageStatus, setCompanyProfileStorageStatus] = useState('browser-only');
-  const profileStorageHydratedRef = useRef(false);
+  const [profileStorageReady, setProfileStorageReady] = useState(false);
+  const lastInventory = useRef(null);
+  const saveQueue = useRef(Promise.resolve());
+  const needsInitialProfile = useRef(false);
+  const profileEdits = useRef({ company: false, logo: false });
+  const editCompany = useCallback((update) => {
+    profileEdits.current.company = true;
+    setMyCompany(update);
+  }, []);
   // A reconnect can complete while the initial IndexedDB load is still reading an
   // older folder handle. Keep that older async work from replacing the newly
   // selected handle and incorrectly putting the UI back into reconnect-required.
@@ -95,11 +103,13 @@ export function useInventoryData(orgKey) {
 
   // 1. Load Data
   useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      setDataLoadError('Chrome is still reading the local inventory. You can keep waiting or retry the read.');
+    }, 20000);
     async function loadAllData() {
-      const documentStorageRevision = documentStorageRevisionRef.current;
       setDataLoaded(false);
       setDataLoadError(null);
-      profileStorageHydratedRef.current = false;
       try {
         const seeds = LEGACY_SEEDS[orgKey] || LEGACY_SEEDS.lobo;
 
@@ -113,7 +123,6 @@ export function useInventoryData(orgKey) {
           savedCustomers, savedCogs, savedWebsitePrices, savedSkuDescriptions, savedOutgoing,
           savedInternal, savedInvoices, savedWebsiteOrders,
           savedMyCompany, savedLogo,
-          savedDocumentStorageRootHandle,
           savedDocumentStorageLocationLabel,
           savedExpenses, savedExpenseCategories, savedCogsHistory, savedShipments, savedQuotes, savedLastModifiedAt
         ] = await Promise.all([
@@ -132,7 +141,6 @@ export function useInventoryData(orgKey) {
           load(`${orgKey}_websiteOrders`, seeds.websiteOrders),
           load(`${orgKey}_myCompany`, seeds.myCompany),
           get(`${orgKey}_logo`),
-          get('documentStorageRootHandle'),
           load('documentStorageLocationLabel', ''),
           load(`${orgKey}_expenses`, seeds.expenses),
           load(`${orgKey}_expenseCategories`, seeds.expenseCategories),
@@ -141,6 +149,7 @@ export function useInventoryData(orgKey) {
           load(`${orgKey}_quotes`, []),
           get(`${orgKey}_lastModifiedAt`)
         ]);
+        if (!active) return;
 
         let hydratedCogsHistory = savedCogsHistory || [];
         if (orgKey === 'lobo') {
@@ -155,40 +164,7 @@ export function useInventoryData(orgKey) {
                     { id: 'seed-6', sku: 'ACT', date: '2025-06-01T12:00:00Z', poNumber: 'Initial Seed', oldAvgCogs: 0, receivedCogs: 5.15, newAvgCogs: 5.15, receivedQty: 0, previousQty: 0 }
                 ];
                 hydratedCogsHistory = [...hydratedCogsHistory, ...seedData];
-                await set(`${orgKey}_cogsHistory`, hydratedCogsHistory);
             }
-        }
-
-        let hydratedCompany = savedMyCompany || {};
-        let hydratedLogo = savedLogo || null;
-        if (savedDocumentStorageRootHandle && documentStorageRevision === documentStorageRevisionRef.current) {
-          try {
-            const permanentProfile = await readCompanyProfile({
-              rootHandle: savedDocumentStorageRootHandle,
-              orgKey,
-            });
-            profileStorageHydratedRef.current = true;
-            if (permanentProfile) {
-              hydratedCompany = permanentProfile.profile;
-              hydratedLogo = permanentProfile.logo || null;
-              await set(`${orgKey}_myCompany`, hydratedCompany);
-              if (hydratedLogo) await set(`${orgKey}_logo`, hydratedLogo);
-              if (documentStorageRevision === documentStorageRevisionRef.current) {
-                setCompanyProfileStorageStatus('saved');
-              }
-            } else {
-              if (documentStorageRevision === documentStorageRevisionRef.current) {
-                setCompanyProfileStorageStatus('browser-only');
-              }
-            }
-          } catch (profileError) {
-            console.warn('Permanent company profile is not currently accessible', profileError);
-            if (documentStorageRevision === documentStorageRevisionRef.current) {
-              setCompanyProfileStorageStatus('reconnect-required');
-            }
-          }
-        } else if (documentStorageRevision === documentStorageRevisionRef.current) {
-          setCompanyProfileStorageStatus('browser-only');
         }
 
         setSnapshots(savedSnaps || []);
@@ -203,11 +179,8 @@ export function useInventoryData(orgKey) {
         setInternalOrders(savedInternal || []);
         setInvoices(savedInvoices || []);
         setWebsiteOrders(savedWebsiteOrders || []);
-        setMyCompany(hydratedCompany);
-        setCompanyLogo(hydratedLogo);
-        if (documentStorageRevision === documentStorageRevisionRef.current) {
-          setDocumentStorageRootHandle(savedDocumentStorageRootHandle || null);
-        }
+        setMyCompany(savedMyCompany || {});
+        setCompanyLogo(savedLogo || null);
         setDocumentStorageLocationLabel(savedDocumentStorageLocationLabel || '');
         setExpenses(savedExpenses || []);
         setExpenseCategories(savedExpenseCategories || seeds.expenseCategories || []);
@@ -222,43 +195,94 @@ export function useInventoryData(orgKey) {
           setSkuImages({});
         }
 
+        setDataLoadError(null);
         setDataLoaded(true);
       } catch (err) {
+        if (!active) return;
         console.error("Failed to load data", err);
         setDataLoadError(err?.message || 'The saved application data could not be loaded.');
+      } finally {
+        clearTimeout(timer);
       }
     }
     loadAllData();
+    return () => { active = false; clearTimeout(timer); };
   }, [orgKey]);
+
+  // Folder handles and file-backed logos can stall independently of inventory.
+  useEffect(() => {
+    if (!dataLoaded) return;
+    const revision = documentStorageRevisionRef.current;
+    let active = true;
+    const current = () => active && revision === documentStorageRevisionRef.current;
+    const timer = setTimeout(() => {
+      if (current()) setCompanyProfileStorageStatus('reconnect-required');
+    }, 20000);
+    async function loadSharedProfile() {
+      try {
+        setCompanyProfileStorageStatus('checking');
+        const rootHandle = await get('documentStorageRootHandle');
+        if (!current()) return;
+        if (!rootHandle) {
+          setCompanyProfileStorageStatus('browser-only');
+          return;
+        }
+        setDocumentStorageRootHandle(rootHandle);
+        const stored = await readCompanyProfile({ rootHandle, orgKey });
+        if (!current()) return;
+        if (stored) {
+          if (!profileEdits.current.company) setMyCompany(stored.profile);
+          if (stored.logo && !profileEdits.current.logo) {
+            setCompanyLogo(stored.logo);
+            set(`${orgKey}_logo`, stored.logo).catch(error => console.warn('Could not cache company logo', error));
+          }
+        }
+        needsInitialProfile.current = !stored;
+        setProfileStorageReady(true);
+        setCompanyProfileStorageStatus(stored ? 'saved' : 'browser-only');
+      } catch (error) {
+        if (current()) {
+          console.warn('Shared company profile is unavailable', error);
+          setCompanyProfileStorageStatus('reconnect-required');
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    loadSharedProfile();
+    return () => { active = false; clearTimeout(timer); };
+  }, [dataLoaded, orgKey]);
 
   // 2. Auto-Save Data
   useEffect(() => {
     if (!dataLoaded) return;
 
-    const handler = setTimeout(() => {
+    const values = {
+      snapshots, pos, settings, vendors, customers, cogs, websitePrices, skuDescriptions,
+      outgoing: outgoingOrders, internal: internalOrders, invoices, websiteOrders, myCompany,
+      expenses, expenseCategories, cogsHistory, shipments, quotes,
+    };
+    // Opening a dashboard establishes a baseline. Only persist subsequent edits.
+    if (!lastInventory.current) {
+      lastInventory.current = values;
+      return;
+    }
+    const persist = async () => {
+      const changes = Object.entries(values)
+        .filter(([key, value]) => value !== lastInventory.current[key])
+        .map(([key, value]) => [`${orgKey}_${key}`, value]);
+      if (!changes.length) return;
       const now = new Date().toISOString();
-      set(`${orgKey}_snapshots`, snapshots);
-      set(`${orgKey}_pos`, pos);
-      set(`${orgKey}_settings`, settings);
-      set(`${orgKey}_vendors`, vendors);
-      set(`${orgKey}_customers`, customers);
-      set(`${orgKey}_cogs`, cogs);
-      set(`${orgKey}_websitePrices`, websitePrices);
-      set(`${orgKey}_skuDescriptions`, skuDescriptions);
-      set(`${orgKey}_outgoing`, outgoingOrders);
-      set(`${orgKey}_internal`, internalOrders);
-      set(`${orgKey}_invoices`, invoices);
-      set(`${orgKey}_websiteOrders`, websiteOrders);
-      set(`${orgKey}_myCompany`, myCompany);
-      set(`${orgKey}_expenses`, expenses);
-      set(`${orgKey}_expenseCategories`, expenseCategories);
-      set(`${orgKey}_cogsHistory`, cogsHistory);
-      set(`${orgKey}_shipments`, shipments);
-      set(`${orgKey}_quotes`, quotes);
-      set(`${orgKey}_lastModifiedAt`, now);
-      setLastModifiedAt(now);
-
-      console.log('Auto-saved data to IDB');
+      try {
+        await setMany([...changes, [`${orgKey}_lastModifiedAt`, now]]);
+        lastInventory.current = values;
+        setLastModifiedAt(now);
+      } catch (error) {
+        console.error('Inventory autosave failed', error);
+      }
+    };
+    const handler = setTimeout(() => {
+      saveQueue.current = saveQueue.current.then(persist);
     }, 1000);
 
     return () => clearTimeout(handler);
@@ -266,7 +290,8 @@ export function useInventoryData(orgKey) {
 
   // Keep the organization profile mirrored in the shared OneDrive document root.
   useEffect(() => {
-    if (!dataLoaded || !documentStorageRootHandle || !profileStorageHydratedRef.current) return;
+    if (!dataLoaded || !documentStorageRootHandle || !profileStorageReady) return;
+    if (!needsInitialProfile.current && !profileEdits.current.company && !profileEdits.current.logo) return;
     const handler = setTimeout(async () => {
       setCompanyProfileStorageStatus('saving');
       try {
@@ -276,6 +301,7 @@ export function useInventoryData(orgKey) {
           profile: myCompany,
           logo: companyLogo,
         });
+        needsInitialProfile.current = false;
         setCompanyProfileStorageStatus('saved');
       } catch (error) {
         console.error('Failed to save permanent company profile', error);
@@ -285,7 +311,7 @@ export function useInventoryData(orgKey) {
       }
     }, 1000);
     return () => clearTimeout(handler);
-  }, [companyLogo, dataLoaded, documentStorageRootHandle, myCompany, orgKey]);
+  }, [companyLogo, dataLoaded, documentStorageRootHandle, myCompany, orgKey, profileStorageReady]);
 
   // Handle Updates
   const updateDocumentStorageRootHandle = useCallback(async (handle) => {
@@ -293,7 +319,7 @@ export function useInventoryData(orgKey) {
     setCompanyProfileStorageStatus('saving');
     await set('documentStorageRootHandle', handle);
     const permanentProfile = await readCompanyProfile({ rootHandle: handle, orgKey });
-    profileStorageHydratedRef.current = true;
+    setProfileStorageReady(true);
     setDocumentStorageRootHandle(handle);
     if (permanentProfile) {
       setMyCompany(permanentProfile.profile);
@@ -325,6 +351,7 @@ export function useInventoryData(orgKey) {
   }, [orgKey]);
 
   const handleLogoUpload = useCallback(async (blob) => {
+    profileEdits.current.logo = true;
     setCompanyLogo(blob);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(COMPANY_LOGO_CHANGED_EVENT, {
@@ -373,7 +400,7 @@ export function useInventoryData(orgKey) {
     internalOrders, setInternalOrders,
     invoices, setInvoices,
     websiteOrders, setWebsiteOrders,
-    myCompany, setMyCompany,
+    myCompany, setMyCompany: editCompany,
     companyLogo, handleLogoUpload,
     documentStorageRootHandle, updateDocumentStorageRootHandle,
     documentStorageLocationLabel, updateDocumentStorageLocationLabel,

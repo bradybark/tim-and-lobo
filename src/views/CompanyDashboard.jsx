@@ -134,6 +134,7 @@ const CompanyDashboard = ({
   const [autoBackupFolderHandle, setAutoBackupFolderHandle] = useState(null);
   const autoBackupLoadedRef = useRef(false);
   const prepareDataRef = useRef(null);
+  const currentImagesRef = useRef(null);
   const { plannerData, leadTimeStats } = useDashboardMetrics({ snapshots, pos, settings, rateParams });
 
   // Handlers
@@ -163,6 +164,7 @@ const CompanyDashboard = ({
   prepareDataRef.current = prepareDataPayload;
   const prepareImagesPayload = async () => { const imagesBase64 = {}; for (const [sku, blob] of Object.entries(skuImages)) { if (blob) { if (typeof blob === 'string') { imagesBase64[sku] = blob; } else { const url = URL.createObjectURL(blob); imagesBase64[sku] = await urlToBase64(url); URL.revokeObjectURL(url); } } } let logoBase64 = null; if (companyLogo) { if (typeof companyLogo === 'string') { logoBase64 = companyLogo; } else { const url = URL.createObjectURL(companyLogo); logoBase64 = await urlToBase64(url); URL.revokeObjectURL(url); } } return { version: 1, orgKey, type: 'image_archive', exportedAt: new Date().toISOString(), skuImages: imagesBase64, companyLogo: logoBase64 }; };
 
+  currentImagesRef.current = { skuImages, companyLogo, prepareImagesPayload };
   const handleExportDataOnly = () => { exportJsonBackup(prepareDataPayload(), `${orgKey}_data.json`); toast.success('Exported'); };
   const handleExportImagesOnly = async () => { toast.promise(async () => { const p = await prepareImagesPayload(); exportJsonBackup(p, `${orgKey}_images.json`); }, { loading: 'Packaging...', success: 'Done', error: 'Failed' }); };
   const handleImportBackup = async (data, { forceOverwrite = false } = {}) => {
@@ -270,9 +272,30 @@ const CompanyDashboard = ({
   const handleOptimizeImages = async () => { const opt = await optimizeImageLibrary(skuImages); setSkuImages(opt); };
   const handlePruneData = (m) => { /* existing logic */ };
 
+  // A saved file can be stale. Compare both copies before enabling writes.
+  const resumeCloudFile = async (handle, current = () => true) => {
+    const file = await handle.getFile();
+    const backup = JSON.parse(await file.text());
+    if (!backup || backup.orgKey !== orgKey) throw new Error('The backup belongs to a different organization or has no organization ID.');
+    const initial = currentImagesRef.current;
+    const images = await initial.prepareImagesPayload();
+    if (!current()) return;
+    const contents = { ...prepareDataRef.current(), skuImages: images.skuImages, companyLogo: images.companyLogo };
+    const dataKeys = Object.keys(contents).filter(key => !['exportedAt', 'version', 'companyName'].includes(key));
+    if (initial.skuImages !== currentImagesRef.current.skuImages || initial.companyLogo !== currentImagesRef.current.companyLogo ||
+        dataKeys.some(key => JSON.stringify(backup[key]) !== JSON.stringify(contents[key]))) {
+      setConflictData({ fileData: backup, handle, fileTime: backup.exportedAt || 'Unknown', browserTime: lastModifiedAt || 'Unknown' });
+      return;
+    }
+    setCloudFileHandle(handle);
+    setCloudStatus(`Linked ${handle.name}`);
+    setPendingReconnectHandle(null);
+  };
+
   // --- Feature 1: Startup Reconnect (auto if permission persisted, else banner) ---
   useEffect(() => {
     if (!dataLoaded || cloudFileHandle) return;
+    let active = true;
     const checkSavedHandle = async () => {
       try {
         const savedHandle = await get(`${orgKey}_cloudFileHandle`);
@@ -283,11 +306,7 @@ const CompanyDashboard = ({
           const status = await savedHandle.queryPermission({ mode: 'readwrite' });
           if (status === 'granted') {
             // Permission already persisted — reconnect silently
-            const file = await savedHandle.getFile();
-            const text = await file.text();
-            try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { }
-            setCloudFileHandle(savedHandle);
-            setCloudStatus(`Linked ${savedHandle.name}`);
+            await resumeCloudFile(savedHandle, () => active);
             return;
           }
         } catch (e) {
@@ -295,6 +314,7 @@ const CompanyDashboard = ({
         }
 
         // Permission not persisted — show reconnect banner for one-click reconnect
+        if (!active) return;
         setPendingReconnectHandle(savedHandle);
         setPendingReconnectName(savedHandle.name);
       } catch (e) {
@@ -302,6 +322,7 @@ const CompanyDashboard = ({
       }
     };
     checkSavedHandle();
+    return () => { active = false; };
   }, [dataLoaded, orgKey, cloudFileHandle]);
 
   const handleReconnect = async () => {
@@ -309,13 +330,7 @@ const CompanyDashboard = ({
     try {
       const permission = await pendingReconnectHandle.requestPermission({ mode: 'readwrite' });
       if (permission === 'granted') {
-        const file = await pendingReconnectHandle.getFile();
-        const text = await file.text();
-        try { const json = JSON.parse(text); handleImportBackup(json); } catch (e) { }
-        setCloudFileHandle(pendingReconnectHandle);
-        setCloudStatus(`Linked ${pendingReconnectHandle.name}`);
-        setPendingReconnectHandle(null);
-        toast.success('Reconnected to backup file');
+        await resumeCloudFile(pendingReconnectHandle);
       } else {
         toast.error('Permission denied. Please link manually.');
         setPendingReconnectHandle(null);
@@ -428,9 +443,9 @@ const CompanyDashboard = ({
       <div className="p-10 text-center text-gray-500">
         {dataLoadError ? (
           <div className="mx-auto max-w-xl rounded-xl border border-red-200 bg-red-50 p-5 text-red-800">
-            <p className="font-semibold">Saved data could not be loaded.</p>
-            <p className="mt-2 text-sm">Nothing has been overwritten. Reload the application and check the browser console if the problem continues.</p>
+            <p className="font-semibold">Waiting for local inventory</p>
             <p className="mt-2 text-xs font-mono">{dataLoadError}</p>
+            <button type="button" onClick={() => window.location.reload()} className="mt-3 rounded border px-3 py-1">Reload and retry</button>
           </div>
         ) : 'Loading database...'}
       </div>
@@ -611,7 +626,7 @@ const CompanyDashboard = ({
               <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Data Conflict</h2>
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Both the file and your browser have data. Which would you like to keep?
+              The backup file and your browser contain different data. Choose the copy to keep, or continue with cloud sync paused.
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
@@ -653,6 +668,7 @@ const CompanyDashboard = ({
                 Use File Data
               </button>
             </div>
+            <button type="button" onClick={() => { setConflictData(null); setPendingReconnectHandle(conflictData.handle); setPendingReconnectName(conflictData.handle.name); }} className="w-full text-sm text-gray-600 dark:text-gray-300">Continue with sync paused</button>
             <button
               onClick={() => setConflictData(null)}
               className="w-full text-center text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
